@@ -78,6 +78,19 @@ button:disabled:active {
     cursor: not-allowed;
 }
 
+p {
+    line-height: 18px;
+}
+b {
+    /* background-color: beige; */
+    border: 1px solid black;
+    border-radius: 4px;
+    padding: 0px 2px;
+}
+a {
+    color: black;
+}
+
 #sidebar {
     position: fixed;
     top: 0px;
@@ -100,6 +113,7 @@ button:disabled:active {
     flex-direction: row;
     border: 2px solid black;
     padding: 4px 4px;
+    margin-right: 8px;
 }
 #render, #raycast, #quicksave, #quickload {
     height: 40px;
@@ -116,6 +130,7 @@ button:disabled:active {
     grid-template-rows: 1fr 1fr;
     padding: 4px 4px;
     margin-top: 8px;
+    margin-right: 8px;
     border: 2px solid black;
 }
 #saveSave {
@@ -131,6 +146,7 @@ button:disabled:active {
 #saveCode {
     grid-row: 1 / 3;
     grid-column: 2;
+    resize: vertical;
 }
 
 #pixelPicker {
@@ -267,4 +283,34 @@ button:disabled:active {
 #modalOk {
     width: 100px;
     background-color: lightgray;
+}
+
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #333;
+        color: white;
+    }
+
+    a {
+        color: white;
+    }
+
+    b {
+        border-color: white;
+    }
+
+    #modal {
+        background-color: #333;
+        border-color: white;
+    }
+    
+    #pixelPicker, .pixelGroup, .pixelGroupContents, #pixelPickerDescription, #pixelPickerCrafting, .pickerPixel:hover, #savecodeControls, #renderControls {
+        border-color: white;
+    }
+    #pixelPicker::after {
+        background-color: white;
+    }
+    .pixelGroupHeaderDropdownIcon {
+        background-image: url(/assets/svg/dropdown-light.svg);
+    }
 }

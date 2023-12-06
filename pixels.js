@@ -2,9 +2,7 @@ const pixels = {
     air: {
         name: 'Air',
         description: 'NO RAYLEIGH SCATTERING HERE!!!!!!!!!!',
-        drawPreview: (ctx) => {
-            ctx.clearRect(0, 0, 50, 50);
-        },
+        draw: (rectangles, ctx) => { },
         refractiveIndex: 1.000293,
         extinctionCoefficient: 0,
         pickable: true,
@@ -15,13 +13,16 @@ const pixels = {
     missing: {
         name: 'Missing Pixel',
         description: 'Doesn\'t exist lol',
-        drawPreview: function (ctx) {
-            ctx.clearRect(0, 0, 50, 50);
-            ctx.fillStyle = 'rgb(0, 0, 0)';
-            ctx.fillRect(0, 0, 50, 50);
-            ctx.fillStyle = 'rgb(255, 0, 255)';
-            ctx.fillRect(0, 0, 25, 25);
-            ctx.fillRect(25, 25, 25, 25);
+        draw: function (rectangles, ctx) {
+            forRectangles(rectangles, (x, y, w, h) => {
+                ctx.fillStyle = 'rgb(0, 0, 0)';
+                fillPixels(x, y, w, h, ctx);
+                ctx.fillStyle = 'rgb(255, 0, 255)';
+                forEachPixel(x, y, w, h, (x2, y2) => {
+                    fillPixels(x2, y2, 1 / 2, 1 / 2, ctx);
+                    fillPixels(x2 + 1 / 2, y2 + 1 / 2, 1 / 2, 1 / 2, ctx);
+                });
+            });
         },
         refractiveIndex: 1,
         extinctionCoefficient: 1,
@@ -52,11 +53,14 @@ window.addEventListener('load', async (e) => {
     canvas2.height = 50;
     ctx2.imageSmoothingEnabled = false;
     ctx2.webkitImageSmoothingEnabled = false;
+    gridScale = 50;
     const promiseList = [];
     const groupNames = ['General'];
     for (const id in pixels) {
         const pixel = pixels[id];
-        pixel.drawPreview(ctx2);
+        ctx2.fillStyle = 'rgb(255, 255, 255)';
+        ctx2.fillRect(0, 0, 50, 50);
+        pixel.draw([[0, 0, 1, 1]], ctx2);
         pixel.image = canvas2.toDataURL('image/png');
         pixel.generatedDescription = `<span style="font-size: 16px; font-weight: bold;">${pixel.name}</span><br>${pixel.description}<br>Refractive Index: ${pixel.refractiveIndex}<br>Extinction Coefficient: ${pixel.extinctionCoefficient}`;
         if (pixel.pickable) {
@@ -116,6 +120,7 @@ window.addEventListener('load', async (e) => {
             };
         }
     }
+    gridScale = canvasResolution / gridSize;
     for (const group of pixelGroups) {
         pixelPicker.appendChild(group)
     }

@@ -59,3 +59,6 @@ function modal(title, subtitle, confirmation = false) {
         });
     });
 };
+
+// here to prevent crash because i want constants
+const canvasResolution = parseInt(window.localStorage.getItem('resolution') ?? 800);

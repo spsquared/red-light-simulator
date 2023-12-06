@@ -1,13 +1,24 @@
-const canvasResolution = parseInt(window.localStorage.getItem('resolution') ?? 800);
 const canvasContainer = document.getElementById('canvasContainer');
 const canvas = document.getElementById('canvas');
+const NO_OFFSCREENCANVAS = typeof OffscreenCanvas == 'undefined';
+function createCanvas() {
+    if (NO_OFFSCREENCANVAS) {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvasResolution;
+        canvas.height = canvasResolution;
+        return canvas;
+    } else {
+        return new OffscreenCanvas(canvasResolution, canvasResolution);
+    }
+};
+const lightCanvas = createCanvas();
 const ctx = canvas.getContext('2d');
-canvas.width = canvasResolution;
-canvas.height = canvasResolution;
 function resetCanvases() {
     ctx.imageSmoothingEnabled = false;
     ctx.webkitImageSmoothingEnabled = false;
 };
+canvas.width = canvasResolution;
+canvas.height = canvasResolution;
 const sidebar = document.getElementById('sidebar');
 const pixelPicker = document.getElementById('pixelPicker');
 const pixelPickerDescription = document.getElementById('pixelPickerDescription');
@@ -243,6 +254,18 @@ window.addEventListener('load', (e) => {
 });
 
 // shared pixel functions
+function forRectangles(rectangles, cb) {
+    for (let rect of rectangles) {
+        cb(...rect);
+    }
+};
+function forEachPixel(x, y, width, height, cb) {
+    for (let i = 0; i < height; i++) {
+        for (let j = 0; j < width; j++) {
+            cb(x + j, y + i);
+        }
+    }
+};
 function fillPixels(x, y, width, height, ctx) {
     ctx.fillRect(x * gridScale, y * gridScale, width * gridScale, height * gridScale);
 };
@@ -268,7 +291,8 @@ let targetFps = 60;
 const frameList = [];
 const fpsList = [];
 let lastFpsList = 0;
-function draw() {
+let backgroundColor = 'rgb(0, 0, 0)';
+async function draw() {
     // reset stuff
     ctx.resetTransform();
     ctx.globalAlpha = 1;
@@ -276,6 +300,7 @@ function draw() {
 
     updateBrush();
     drawFrame();
+    renderer.render();
 
     let now = performance.now();
     while (frameList[0] + 1000 <= now) {
@@ -295,8 +320,33 @@ function draw() {
     prevMX = mX;
     prevMY = mY;
 };
-function drawFrame() {
-    // ok webgpu time
+async function drawFrame() {
+    // draw grid normally because who cares
+    ctx.clearRect(0, 0, canvasResolution, canvasResolution);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, canvasResolution, canvasResolution);
+    for (let i in numPixels) {
+        numPixels[i].rectangles.length = 0;
+    }
+    for (let y = 0; y < gridSize; y++) {
+        let curr = grid[y][0];
+        let amount = 0;
+        for (let x = 1; x < gridSize; x++) {
+            amount++;
+            if (grid[y][x] != curr) {
+                pixelData(curr).rectangles.push([x - amount, y, amount, 1]);
+                curr = grid[y][x];
+                amount = 0;
+            }
+        }
+        pixelData(curr).rectangles.push([gridSize - amount - 1, y, amount + 1, 1]);
+    }
+    for (let i in numPixels) {
+        if (numPixels[i].rectangles.length > 0) numPixels[i].draw(numPixels[i].rectangles, ctx);
+    }
+    // overlay gpu stuff here (render to offscreen i guess)
+    ctx.drawImage(lightCanvas, 0, 0);
 };
 function drawUI() {
     ctx.globalAlpha = 1;
@@ -327,19 +377,31 @@ function drawUI() {
     ctx.fillText(brushPixelText, canvasResolution - 6, 26);
     ctx.fillText(brushLocationText, canvasResolution - 6, 47);
 };
+async function getRenderer() {
+    window.getGPU = undefined;
+    // atrocities
+    const renderer = new LightRenderer(lightCanvas);
+    Object.defineProperty(window, 'renderer', {
+        configurable: false,
+        enumerable: true,
+        value: await renderer,
+        writable: false,
+    });
+};
 async function startDrawLoop() {
     window.startDrawLoop = undefined;
     let start;
     while (true) {
         start = performance.now();
         await new Promise((resolve, reject) => {
-            window.requestAnimationFrame(() => {
-                draw();
+            window.requestAnimationFrame(async () => {
+                await draw(renderer);
                 setTimeout(resolve, ~~(1000 / targetFps - (performance.now() - start) - 1));
             });
         });
     }
 };
+getRenderer();
 window.addEventListener('load', startDrawLoop);
 
 // brush
@@ -442,11 +504,11 @@ function clickLine(x1, y1, x2, y2, remove, placePixel = brush.pixel, size = brus
             return false;
         };
         if (remove) {
-            act((x, y) =>  {
+            act((x, y) => {
                 grid[y][x] = pixNum.AIR;
             });
         } else {
-            act((x, y) =>  {
+            act((x, y) => {
                 grid[y][x] = placePixelNum;
             });
         }
@@ -460,11 +522,11 @@ window.addEventListener('DOMContentLoaded', (e) => {
             e.preventDefault();
             e.target.blur();
         }
-        if (e.target.matches('input') || e.target.matches('textarea') || !acceptInputs || rendering) return;
+        if (e.target.matches('input') || e.target.matches('textarea') || !acceptInputs || renderer.rendering) return;
         const key = e.key.toLowerCase();
         if (key == 'arrowup') {
-                let bsize = brush.size;
-                brush.size = Math.min(Math.ceil(gridSize / 2 + 1), brush.size + 1);
+            let bsize = brush.size;
+            brush.size = Math.min(Math.ceil(gridSize / 2 + 1), brush.size + 1);
         } else if (key == 'arrowdown') {
             let bsize = brush.size;
             brush.size = Math.max(1, brush.size - 1);
@@ -476,7 +538,7 @@ window.addEventListener('DOMContentLoaded', (e) => {
         if ((key != 'i' || !e.shiftKey || !e.ctrlKey) && key != 'f11' && key != '=' && key != '-') e.preventDefault();
     };
     document.onkeyup = (e) => {
-        if (e.target.matches('input') || e.target.matches('textarea') || !acceptInputs || rendering) return;
+        if (e.target.matches('input') || e.target.matches('textarea') || !acceptInputs || renderer.rendering) return;
         const key = e.key.toLowerCase();
         if (key == 'shift') {
             removing = false;
@@ -552,18 +614,18 @@ let writeSaveTimeout = setTimeout(() => { });
 const saveSaveButton = document.getElementById('saveSave');
 const loadSaveButton = document.getElementById('loadSave');
 const saveCodeText = document.getElementById('saveCode');
-// disable all controls while rendering (or defer inputs while rendering frames)
+// disable all controls while renderer.rendering (or defer inputs while renderer.rendering frames)
 quicksaveButton.onclick = (e) => {
-    if (!acceptInputs || rendering) return;
+    if (!acceptInputs || renderer.rendering) return;
     quicksave = generateSaveCode();
     quickloadButton.disabled = false;
 };
 quickloadButton.onclick = (e) => {
-    if (!acceptInputs || rendering) return;
+    if (!acceptInputs || renderer.rendering) return;
     if (quicksave != null) loadSaveCode(quicksave);
 };
 saveCodeText.oninput = (e) => {
-    if (!acceptInputs || rendering) return;
+    if (!acceptInputs || renderer.rendering) return;
     saveCode = saveCodeText.value.replace('\n', '');
     clearTimeout(writeSaveTimeout);
     writeSaveTimeout = setTimeout(() => {
@@ -571,14 +633,14 @@ saveCodeText.oninput = (e) => {
     }, 1000);
 };
 saveSaveButton.onclick = (e) => {
-    if (!acceptInputs || rendering) return;
+    if (!acceptInputs || renderer.rendering) return;
     saveCode = generateSaveCode();
     saveCodeText.value = saveCode;
     window.localStorage.setItem('saveCode', generateSaveCode());
     window.localStorage.setItem('saveCodeText', saveCode);
 };
 loadSaveButton.onclick = async (e) => {
-    if (!acceptInputs || rendering) return;
+    if (!acceptInputs || renderer.rendering) return;
     loadSaveCode(saveCodeText.value.replace('\n', ''));
     quicksave = null;
     quickloadButton.disabled = true;
