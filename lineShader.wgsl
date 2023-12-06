@@ -9,7 +9,8 @@ struct FragVertex {
 }
 
 // bindings for buffers
-@group(0) @binding(0) var<uniform> vertices: Vertex; // idk
+@group(0) @binding(0) var<storage> vertices: array<Vertex>; // idk
+@group(0) @binding(1) var<uniform> config: f32;
 
 @vertex
 fn vertex_main(vertex: Vertex) -> FragVertex {

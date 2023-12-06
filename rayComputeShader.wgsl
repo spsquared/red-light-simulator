@@ -3,8 +3,6 @@ const PIXELDATA = array(
     vec4<f32>(1.0, 2.0, 3.0, 4.0)
 );
 
-// bindings for buffers
-
 struct ComputeInput {
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>
@@ -14,6 +12,14 @@ struct Vertex {
     @location(0) position: vec2<u32>,
     @location(1) color: vec4<u32>
 }
+
+// bindings for buffers
+@group(0) @binding(0) var<storage> grid: u32; // probably wrong
+@group(0) @binding(1) var<storage> vertices: array<Vertex>;
+
+// constants
+@id(0) override gridSize: u32;
+                                            
 
 // compute shader here, idk read from buffers and write to another buffer that will be used as vertex buffer or something
 // how does do variable lengths for rays??

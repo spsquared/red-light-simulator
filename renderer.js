@@ -5,35 +5,59 @@ class LightRenderer {
     #ADAPTER;
     #GPU;
     #renderSettings = class LightRendererConfig {
+        // static #updateParentResolutionSettings;
+        // static set updateParentResolutionSettings(cb) { this.#updateParentResolutionSettings = cb; }
         static precision = 10; // how many divisions of a degree should be made
         static accuracy = 5; // how many rays should be sent for each angle,
         static #resolution = canvasResolution; // resolution of compute pass
         static set resolution(r) {
             this.#resolution = Math.min(65534, Math.max(Math.floor(r / 2) * r, 2));
+            // this.#updateParentResolutionSettings();
         }
         static get resolution() { return this.#resolution; }
+        static vertexAllocation = 100;
     };
     #rendering = false;
     #ready = false;
-    #vertexBufferLayout = {
-        arrayStride: 8,
-        attributes: [
-            {
-                shaderLocation: 0,
-                format: 'uint16x2',
-                offset: 0
-            },
-            {
-                shaderLocation: 1,
-                format: 'uint8x4',
-                offset: 4
-            }
-        ],
-        stepMode: 'vertex'
+    #resources = {
+        computeModule: null,
+        renderModule: null,
+        computePipeline: null,
+        renderPipeline: null,
+        vertexBufferLayout: {
+            arrayStride: 8,
+            attributes: [
+                {
+                    shaderLocation: 0,
+                    format: 'uint16x2',
+                    offset: 0
+                },
+                {
+                    shaderLocation: 1,
+                    format: 'uint8x4',
+                    offset: 4
+                }
+            ],
+            stepMode: 'vertex'
+        },
+        buffers: {
+            grid: null,
+            computeVertices: null,
+            vertices: null,
+            // renderConfig: null
+        },
+        bufferArrays: {
+            grid: null,
+            computeVertices: null,
+            vertices: null,
+            // renderConfig: null
+        },
+        computeBindGroupLayout: null,
+        renderBindGroupLayout: null,
+        computeBindGroup: null,
+        renderBindGroup: null
     };
-    #computeModule;
-    #renderModule;
-    #renderPipeline;
+    #gridSize = gridSize;
 
     constructor(canvas) {
         this.#CANVAS = canvas;
@@ -42,37 +66,140 @@ class LightRenderer {
             this.#ADAPTER = await navigator.gpu?.requestAdapter();
             this.#GPU = await this.#ADAPTER?.requestDevice();
             if (this.#GPU == undefined) modal('<span style="color: red;">WebGPU not supported!<span>', '<span style="color: red;">Red Light Simulator needs WebGPU to run!<span>');
-            const cformat = navigator.gpu.getPreferredCanvasFormat();
             this.#CTX.configure({
                 device: this.#GPU,
-                format: cformat
+                format: navigator.gpu.getPreferredCanvasFormat()
             });
-            this.#renderModule = this.#GPU.createShaderModule({
+            // make buffers (and ways to recreate them)
+            this.#resources.bufferArrays.grid = new Uint8ClampedArray(this.#gridSize ** 2);
+            this.#resources.bufferArrays.vertices = new BigUint64Array(360 * this.#renderSettings.vertexAllocation * this.#renderSettings.accuracy * this.#renderSettings.precision); // inefficient
+            // this.#resources.bufferArrays.renderConfig = new Float32Array(3);
+            // let updateRenderconfig = () => {
+            //     this.#resources.bufferArrays.renderConfig.set([this.#renderSettings.resolution, 2 / this.#renderSettings.resolution, -this.#renderSettings.resolution / 2]);
+            // };
+            // this.#renderSettings.updateParentResolutionSettings = updateRenderconfig;
+            // updateRenderconfig();
+            // this.#resources.buffers.renderConfig = this.#GPU.createBuffer({
+            //     label: 'Render config buffer',
+            //     size: this.#resources.bufferArrays.renderConfig.byteLength,
+            //     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            // });
+            // create shader modules
+            this.#resources.computeModule = this.#GPU.createShaderModule({
+                label: 'Light compute shader',
+                code: await (await fetch('./rayComputeShader.wgsl')).text()
+            });
+            this.#resources.renderModule = this.#GPU.createShaderModule({
                 label: 'Light render shader',
                 code: await (await fetch('./lineShader.wgsl')).text()
             });
-            this.#renderPipeline = this.#GPU.createRenderPipeline({
-                label: 'Light render pipeline',
-                layout: 'auto',
-                vertex: {
-                    module: this.#renderModule,
-                    entryPoint: 'vertex_main',
-                    buffers: [this.#vertexBufferLayout]
-                },
-                fragment: {
-                    module: this.#renderModule,
-                    entryPoint: 'fragment_main',
-                    targets: [
-                        { format: cformat }
-                    ]
-                },
-                primitive: {
-                    topology: 'line-list'
-                }
-            })
+            // bind buffers and create pipeline
+            this.#createPipelines();
             this.#ready = true;
         };
         getGPU();
+    }
+    // REMEMBER TO REMOVE COPY_DST FLAG FROM VERTEX BUFFER
+    #createPipelines() {
+        // create buffers
+        this.#resources.buffers.grid = this.#GPU.createBuffer({
+            label: 'Grid buffer',
+            size: this.#resources.bufferArrays.grid.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+        });
+        this.#resources.buffers.vertices = this.#GPU.createBuffer({
+            label: 'Light vertices',
+            size: this.#resources.bufferArrays.vertices.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+        });
+        // bind buffers
+        this.#resources.computeBindGroupLayout = this.#GPU.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'read-only-storage'
+                    }
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'storage'
+                    }
+                }
+            ]
+        });
+        this.#resources.computeBindGroup = this.#GPU.createBindGroup({
+            label: 'Render bind group',
+            layout: this.#resources.computeBindGroupLayout,
+            entries: [
+                { binding: 0, resource: { buffer: this.#resources.buffers.grid } },
+                { binding: 1, resource: { buffer: this.#resources.buffers.vertices } }
+            ]
+        });
+        this.#resources.renderBindGroupLayout = this.#GPU.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: {
+                        type: 'read-only-storage'
+                    }
+                },
+                // {
+                //     binding: 1,
+                //     visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                //     buffer: {
+                //         type: 'read-only-storage'
+                //     }
+                // }
+            ]
+        });
+        this.#resources.renderBindGroup = this.#GPU.createBindGroup({
+            label: 'Render bind group',
+            layout: this.#resources.renderBindGroupLayout,
+            entries: [
+                { binding: 0, resource: { buffer: this.#resources.buffers.vertices } },
+                // { binding: 1, resource: { buffer: this.#resources.buffers.renderConfig } }
+            ]
+        });
+        // create pipelines
+        this.#resources.computePipeline = this.#GPU.createComputePipeline({
+            label: 'Light compute pipeline',
+            layout: this.#GPU.createPipelineLayout({
+                bindGroupLayouts: [this.#resources.computeBindGroupLayout]
+            }),
+            compute: {
+                module: this.#resources.computeModule,
+                entryPoint: 'compute_main',
+                constants: {
+                    gridSize: this.#gridSize
+                }
+            }
+        });
+        this.#resources.renderPipeline = this.#GPU.createRenderPipeline({
+            label: 'Light render pipeline',
+            layout: this.#GPU.createPipelineLayout({
+                bindGroupLayouts: [this.#resources.renderBindGroupLayout]
+            }),
+            vertex: {
+                module: this.#resources.renderModule,
+                entryPoint: 'vertex_main',
+                buffers: [this.#resources.vertexBufferLayout]
+            },
+            fragment: {
+                module: this.#resources.renderModule,
+                entryPoint: 'fragment_main',
+                targets: [
+                    { format: navigator.gpu.getPreferredCanvasFormat() }
+                ]
+            },
+            primitive: {
+                topology: 'line-list'
+            }
+        });
     }
 
     async #simulateRays() {
@@ -83,20 +210,8 @@ class LightRenderer {
         // x value is ray angle
         // y and z are useless again
         // probably shouldn't be allocating new buffers every frame but oh well lol
-        const gridFlat = new Uint8ClampedArray(grid.reduce((f, l) => f.push(...l), []));
-        const gridBuffer = this.#GPU.createBuffer({
-            label: 'Grid buffer',
-            size: gridFlat.byteLength,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-        });
-        const settingsArr = new Uint16Array([gridSize, this.#renderSettings.precision, this.#renderSettings.accuracy, this.#renderSettings.resolution]);
-        const settingsBuffer = this.#GPU.createBuffer({
-            label: 'Settings buffer',
-            size: settingsArr.byteLength,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-        });
-        this.#GPU.queue.writeBuffer(gridBuffer, 0, gridFlat);
-        this.#GPU.queue.writeBuffer(settingsBuffer, 0, settingsArr);
+        this.#resources.bufferArrays.grid.set(grid.reduce((f, l) => f.push(...l), []));
+        this.#GPU.queue.writeBuffer(this.#resources.buffers.grid, 0, this.#resources.bufferArrays.grid);
         const encoder = this.#GPU.createCommandEncoder();
         const computePass = encoder.beginComputePass({
             // put stuff here
@@ -108,29 +223,11 @@ class LightRenderer {
         // return 64-bit int array (16 bit x, 16 bit y, 24 bit color (rgb), 8 bit intensity) (will limit max resolution of rays but who cares)
         this.#GPU.queue.submit([encoder.finish()]);
     }
-    async #drawRays(vertices) {
+    async #drawRays() {
         // move buffer allocation to constructor
-        const vertexBuffer = this.#GPU.createBuffer({
-            label: 'Light vertices',
-            size: vertices.byteLength,
-            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
-        });
-        const resolutionArr = new Float32Array([this.#renderSettings.resolution, 2 / this.#renderSettings.resolution, -this.#renderSettings.resolution / 2]);
-        const resolutionBuffer = this.#GPU.createBuffer({
-            label: 'Resolution buffer',
-            size: resolutionArr.byteLength,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-        });
-        const bindGroup = this.#GPU.createBindGroup({
-            label: 'Render bind group',
-            layout: this.#renderPipeline.getBindGroupLayout(0),
-            entries: [
-                { binding: 0, resource: { buffer: vertexBuffer } },
-                { binding: 1, resource: { buffer: resolutionBuffer } }
-            ]
-        })
-        this.#GPU.queue.writeBuffer(vertexBuffer, 0, vertices);
-        this.#GPU.queue.writeBuffer(resolutionBuffer, 0, resolutionArr);
+        console.log(this.#resources.bufferArrays.vertices)
+        this.#GPU.queue.writeBuffer(this.#resources.buffers.vertices, 0, this.#resources.bufferArrays.vertices);
+        // this.#GPU.queue.writeBuffer(this.#resources.buffers.renderConfig, 0, this.#resources.bufferArrays.renderConfig);
         const encoder = this.#GPU.createCommandEncoder();
         const renderPass = encoder.beginRenderPass({
             colorAttachments: [
@@ -142,9 +239,10 @@ class LightRenderer {
                 }
             ]
         });
-        renderPass.setPipeline(this.#renderPipeline);
-        renderPass.setVertexBuffer(0, vertexBuffer);
-        renderPass.draw(vertices.byteLength / 8);
+        renderPass.setPipeline(this.#resources.renderPipeline);
+        renderPass.setBindGroup(0, this.#resources.renderBindGroup);
+        renderPass.setVertexBuffer(0, this.#resources.buffers.vertices);
+        renderPass.draw(this.#resources.bufferArrays.vertices.byteLength / 8);
         renderPass.end();
         this.#GPU.queue.submit([encoder.finish()]);
     }
@@ -181,8 +279,11 @@ class LightRenderer {
         vertices[21] = 0;   // g
         vertices[22] = 255; // b
         vertices[23] = 255; // a
-        this.#drawRays(vertices);
+        const b = new BigInt64Array(vertices.buffer);
+        this.#resources.bufferArrays.vertices.set(b);
+        this.#drawRays();
         // wait how do i know if the gpu is done
+        // this.#rendering = false;
     }
 
     get config() {
