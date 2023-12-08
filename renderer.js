@@ -5,12 +5,11 @@ class LightRenderer {
     #ADAPTER;
     #GPU;
     #config = {
-        precision: 5, // how many divisions of a degree should be made
-        accuracy: 4, // how many rays should be sent for each angle
-        vertexAllocation: 100, // how many vertices are allocated per ray (change to dynamic sizing with hard cap later?)
-        maxSources: 16 // how many sources of light that can exist at a time
+        precision: 4, // how many divisions of a degree should be made
+        accuracy: 16, // how many rays should be sent for each angle
+        vertexAllocation: 64, // how many vertices are allocated per ray (change to dynamic sizing with hard cap later?)
+        maxSources: 8 // how many sources of light that can exist at a time
     };
-    #rendering = false;
     #ready = false;
     #resources = {
         computeModule: null,
@@ -41,12 +40,14 @@ class LightRenderer {
         bufferArrays: {
             grid: null,
             sources: null,
-            vertices: null,
+            vertices: null
         },
         computeBindGroupLayout: null,
         renderBindGroupLayout: null,
         computeBindGroup: null,
-        renderBindGroup: null
+        renderBindGroup: null,
+        computeWorkgroupSize: 0,
+        vertexCount: 0
     };
     #gridSize = gridSize;
 
@@ -75,12 +76,13 @@ class LightRenderer {
         };
         getGPU();
     }
-    // REMEMBER TO REMOVE COPY_DST FLAG FROM VERTEX BUFFER
+
     async #createPipelines() {
+        this.#resources.vertexCount = 360 * this.#config.maxSources * this.#config.vertexAllocation * this.#config.accuracy * this.#config.precision;
         // create buffers
         this.#resources.bufferArrays.grid = new Uint8ClampedArray(this.#gridSize ** 2);
         this.#resources.bufferArrays.sources = new Uint16Array(this.#config.maxSources * 2); // limited to max 64 sources
-        this.#resources.bufferArrays.vertices = new BigUint64Array(360 * this.#config.maxSources * this.#config.vertexAllocation * this.#config.accuracy * this.#config.precision); // inefficient
+        this.#resources.bufferArrays.vertices = new BigUint64Array(this.#resources.vertexCount); // inefficient
         this.#resources.buffers.grid = this.#GPU.createBuffer({
             label: 'Grid buffer',
             size: this.#resources.bufferArrays.grid.byteLength,
@@ -94,7 +96,7 @@ class LightRenderer {
         this.#resources.buffers.vertices = this.#GPU.createBuffer({
             label: 'Light vertices',
             size: this.#resources.bufferArrays.vertices.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
         });
         // bind buffers
         this.#resources.computeBindGroupLayout = this.#GPU.createBindGroupLayout({
@@ -160,7 +162,9 @@ class LightRenderer {
                 entryPoint: 'compute_main',
                 constants: {
                     grid_size: this.#gridSize,
-                    ray_precision: this.#config.precision
+                    ray_precision: this.#config.precision,
+                    ray_accuracy: this.#config.accuracy,
+                    vertex_allocation: this.#config.vertexAllocation
                 }
             }
         });
@@ -185,9 +189,11 @@ class LightRenderer {
                 topology: 'line-list'
             },
         });
+        this.#resources.computeWorkgroupSize = this.#config.precision * this.#config.accuracy;
     }
 
-    async #simulateRays() {
+    async render() {
+        if (!this.#ready) return false;
         // workgroup group size
         // x value is ray subdivision (precision)
         // y value is pass number... not used in shader (accuracy)
@@ -197,19 +203,19 @@ class LightRenderer {
         // y and z are useless again
         this.#resources.bufferArrays.grid.set(grid.reduce((f, l) => { f.push(...l); return f; }, []));
         this.#resources.bufferArrays.sources.fill(0);
-        const lightSources = [];
+        this.#resources.bufferArrays.vertices.fill(BigInt(0));
+        const lightSources = [0, 0];
+        if (lightSources.length == 0) return;
+        this.#resources.bufferArrays.sources.set(lightSources);
         this.#GPU.queue.writeBuffer(this.#resources.buffers.grid, 0, this.#resources.bufferArrays.grid);
+        this.#GPU.queue.writeBuffer(this.#resources.buffers.sources, 0, this.#resources.bufferArrays.sources);
+        this.#GPU.queue.writeBuffer(this.#resources.buffers.vertices, 0, this.#resources.bufferArrays.vertices);
         const encoder = this.#GPU.createCommandEncoder();
         const computePass = encoder.beginComputePass();
         computePass.setPipeline(this.#resources.computePipeline);
         computePass.setBindGroup(0, this.#resources.computeBindGroup);
-        computePass.dispatchWorkgroups(this.#config.precision, this.#config.accuracy, lightSources.length / 2);
+        computePass.dispatchWorkgroups(this.#resources.computeWorkgroupSize, 4, lightSources.length / 2);
         computePass.end();
-        this.#GPU.queue.submit([encoder.finish()]);
-    }
-    // ADD INDEX BUFFER
-    async #drawRays() {
-        const encoder = this.#GPU.createCommandEncoder();
         const renderPass = encoder.beginRenderPass({
             colorAttachments: [
                 {
@@ -223,25 +229,13 @@ class LightRenderer {
         renderPass.setPipeline(this.#resources.renderPipeline);
         renderPass.setBindGroup(0, this.#resources.renderBindGroup);
         renderPass.setVertexBuffer(0, this.#resources.buffers.vertices);
-        renderPass.draw(this.#resources.bufferArrays.vertices.byteLength / 8);
+        renderPass.draw(this.#resources.vertexCount);
         renderPass.end();
         this.#GPU.queue.submit([encoder.finish()]);
     }
 
-    async render() {
-        if (this.#rendering || !this.#ready) return false;
-        this.#rendering = true;
-        this.#simulateRays();
-        this.#drawRays();
-        // wait how do i know if the gpu is done
-        // this.#rendering = false;
-    }
-
     get config() {
         return this.#config;
-    }
-    get rendering() {
-        return this.#rendering;
     }
     get ready() {
         return this.#ready;

@@ -292,6 +292,7 @@ const frameList = [];
 const fpsList = [];
 let lastFpsList = 0;
 let backgroundColor = 'rgb(0, 0, 0)';
+let renderLights = false;
 async function draw() {
     // reset stuff
     ctx.resetTransform();
@@ -300,7 +301,8 @@ async function draw() {
 
     updateBrush();
     drawFrame();
-    renderer.render();
+    if (renderLights) renderer.render();
+    frameList.push(performance.now());
 
     let now = performance.now();
     while (frameList[0] + 1000 <= now) {
@@ -522,7 +524,7 @@ window.addEventListener('DOMContentLoaded', (e) => {
             e.preventDefault();
             e.target.blur();
         }
-        if (e.target.matches('input') || e.target.matches('textarea') || !acceptInputs || renderer.rendering) return;
+        if (e.target.matches('input') || e.target.matches('textarea') || !acceptInputs) return;
         const key = e.key.toLowerCase();
         if (key == 'arrowup') {
             let bsize = brush.size;
@@ -538,7 +540,7 @@ window.addEventListener('DOMContentLoaded', (e) => {
         if ((key != 'i' || !e.shiftKey || !e.ctrlKey) && key != 'f11' && key != '=' && key != '-') e.preventDefault();
     };
     document.onkeyup = (e) => {
-        if (e.target.matches('input') || e.target.matches('textarea') || !acceptInputs || renderer.rendering) return;
+        if (e.target.matches('input') || e.target.matches('textarea') || !acceptInputs) return;
         const key = e.key.toLowerCase();
         if (key == 'shift') {
             removing = false;
@@ -614,18 +616,22 @@ let writeSaveTimeout = setTimeout(() => { });
 const saveSaveButton = document.getElementById('saveSave');
 const loadSaveButton = document.getElementById('loadSave');
 const saveCodeText = document.getElementById('saveCode');
-// disable all controls while renderer.rendering (or defer inputs while renderer.rendering frames)
+renderButton.onclick = (e) => {
+    renderLights = !renderLights;
+    if (renderLights) renderButton.innerText = 'Stop Rendering';
+    else renderButton.innerText = 'Render';
+};
 quicksaveButton.onclick = (e) => {
-    if (!acceptInputs || renderer.rendering) return;
+    if (!acceptInputs) return;
     quicksave = generateSaveCode();
     quickloadButton.disabled = false;
 };
 quickloadButton.onclick = (e) => {
-    if (!acceptInputs || renderer.rendering) return;
+    if (!acceptInputs) return;
     if (quicksave != null) loadSaveCode(quicksave);
 };
 saveCodeText.oninput = (e) => {
-    if (!acceptInputs || renderer.rendering) return;
+    if (!acceptInputs) return;
     saveCode = saveCodeText.value.replace('\n', '');
     clearTimeout(writeSaveTimeout);
     writeSaveTimeout = setTimeout(() => {
@@ -633,14 +639,14 @@ saveCodeText.oninput = (e) => {
     }, 1000);
 };
 saveSaveButton.onclick = (e) => {
-    if (!acceptInputs || renderer.rendering) return;
+    if (!acceptInputs) return;
     saveCode = generateSaveCode();
     saveCodeText.value = saveCode;
     window.localStorage.setItem('saveCode', generateSaveCode());
     window.localStorage.setItem('saveCodeText', saveCode);
 };
 loadSaveButton.onclick = async (e) => {
-    if (!acceptInputs || renderer.rendering) return;
+    if (!acceptInputs) return;
     loadSaveCode(saveCodeText.value.replace('\n', ''));
     quicksave = null;
     quickloadButton.disabled = true;
