@@ -1,31 +1,36 @@
+// constants
+override grid_size: u32; // WHY IS THERE SYNTAX ERROR
+override ray_precision: u32;
+override vertex_allocation: u32;
+
 // pixel constants, hardcoded
 const PIXELDATA = array(
     vec4<f32>(1.0, 2.0, 3.0, 4.0)
 );
 
 struct ComputeInput {
-    @builtin(workgroup_id) workgroup_id: vec3<u32>,
-    @builtin(num_workgroups) num_workgroups: vec3<u32>
+    @builtin(local_invocation_id) thread_id: vec3<u32>, // egregious
+    @builtin(global_invocation_id) workgroup_id: vec3<u32>
 }
 struct Vertex {
-    // I WANT 8 BIT INTS BACK
     @location(0) position: vec2<u32>,
     @location(1) color: vec4<u32>
 }
 
 // bindings for buffers
-@group(0) @binding(0) var<storage> grid: u32; // probably wrong
-@group(0) @binding(1) var<storage> vertices: array<Vertex>;
+@group(0) @binding(0) var<storage, read> grid: array<u32>;
+@group(0) @binding(1) var<storage, read> sources: array<vec2<u32>>;
+@group(0) @binding(2) var<storage, read_write> vertices: array<Vertex>;
+// single ray mode - uniform buffer for mouse location?
 
-// constants
-@id(0) override gridSize: u32;
-                                            
-
-// compute shader here, idk read from buffers and write to another buffer that will be used as vertex buffer or something
-// how does do variable lengths for rays??
-@compute @workgroup_size(1, 1, 1)
+@compute @workgroup_size(90, 4, 1) // not sure if necessary, is max dimension 256?
 fn compute_main(params: ComputeInput) {
-    // idk return stuff i have no idea what im doing
+    // thread id
+    //  x - ray subdivision
+    //  y - pass number
+    //  z - source index
+    // workgroup id
+    //  x - ray sector angle
+    //  y - ray sector
+    // angle is (workgroup_id.x * workgroup_id.y) + (thread_id.x / precision)
 }
-
-// will have to do a bunch of bitwise operations to read and write buffers buh

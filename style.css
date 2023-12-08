@@ -37,8 +37,8 @@ body {
     left: 8px;
     width: calc(var(--canvas-size) - 20px);
     height: calc(var(--canvas-size) - 20px);
-    border: 2px solid black;
-    background-color: white;
+    border: 2px solid white;
+    background-color: black;
     cursor: none;
 }
 
