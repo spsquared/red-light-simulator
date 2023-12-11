@@ -96,7 +96,7 @@ class LightRenderer {
         this.#resources.buffers.vertices = this.#GPU.createBuffer({
             label: 'Light vertices',
             size: this.#resources.bufferArrays.vertices.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
         });
         // bind buffers
         this.#resources.computeBindGroupLayout = this.#GPU.createBindGroupLayout({
@@ -176,6 +176,7 @@ class LightRenderer {
             vertex: {
                 module: this.#resources.renderModule,
                 entryPoint: 'vertex_main',
+                constants: {},
                 buffers: [this.#resources.vertexBufferLayout]
             },
             fragment: {
@@ -192,23 +193,39 @@ class LightRenderer {
         this.#resources.computeWorkgroupSize = this.#config.precision * this.#config.accuracy;
     }
 
+    // multiple passes for differnet wavelengths
     async render() {
         if (!this.#ready) return false;
-        // workgroup group size
-        // x value is ray subdivision (precision)
-        // y value is pass number... not used in shader (accuracy)
-        // z value is source index
-        // workgroup size
-        // x value is ray angle from 0 to 360
-        // y and z are useless again
         this.#resources.bufferArrays.grid.set(grid.reduce((f, l) => { f.push(...l); return f; }, []));
         this.#resources.bufferArrays.sources.fill(0);
         this.#resources.bufferArrays.vertices.fill(BigInt(0));
-        const lightSources = [0, 0];
+        const lightSources = [10, 10];
         if (lightSources.length == 0) return;
         this.#resources.bufferArrays.sources.set(lightSources);
         this.#GPU.queue.writeBuffer(this.#resources.buffers.grid, 0, this.#resources.bufferArrays.grid);
         this.#GPU.queue.writeBuffer(this.#resources.buffers.sources, 0, this.#resources.bufferArrays.sources);
+        this.#GPU.queue.writeBuffer(this.#resources.buffers.vertices, 0, this.#resources.bufferArrays.vertices);
+        let len = 16;
+        const vertices = new Uint8Array(16 * len); // same as 64-bit int array with length 3
+        for (let i = 0; i < len; i++) {
+            let j = 16 * i;
+            let fdijgjrgfhjukjfdkjfd = Math.round(i / (len - 1) * 65535);
+            vertices[j + 0] = fdijgjrgfhjukjfdkjfd;
+            vertices[j + 1] = fdijgjrgfhjukjfdkjfd >> 8;
+            vertices[j + 2] = 10000;
+            vertices[j + 3] = 10000 >> 8;
+            vertices[j + 4] = 255;
+            vertices[j + 7] = 255;
+            vertices[j + 8] = 20000;
+            vertices[j + 9] = 20000 >> 8;
+            vertices[j + 10] = 5000;
+            vertices[j + 11] = 5000 >> 8;
+            vertices[j + 14] = 255;
+            vertices[j + 15] = 255;
+        }
+        // console.log(vertices)
+        const b = new BigInt64Array(vertices.buffer);
+        this.#resources.bufferArrays.vertices.set(b);
         this.#GPU.queue.writeBuffer(this.#resources.buffers.vertices, 0, this.#resources.bufferArrays.vertices);
         const encoder = this.#GPU.createCommandEncoder();
         const computePass = encoder.beginComputePass();
@@ -231,7 +248,17 @@ class LightRenderer {
         renderPass.setVertexBuffer(0, this.#resources.buffers.vertices);
         renderPass.draw(this.#resources.vertexCount);
         renderPass.end();
+        const buhbuffer = this.#GPU.createBuffer({
+            label: 'useless buffer',
+            size: this.#resources.bufferArrays.vertices.byteLength,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+        });
+        encoder.copyBufferToBuffer(this.#resources.buffers.vertices, 0, buhbuffer, 0, this.#resources.bufferArrays.vertices.byteLength);
         this.#GPU.queue.submit([encoder.finish()]);
+        await buhbuffer.mapAsync(GPUMapMode.READ);
+        const sadfdsafdsafdsafdsafdsafdsaf = new Uint8Array(buhbuffer.getMappedRange());
+        console.log(sadfdsafdsafdsafdsafdsafdsaf);
+        buhbuffer.destroy();
     }
 
     get config() {

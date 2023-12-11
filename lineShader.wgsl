@@ -9,11 +9,14 @@ struct FragVertex {
 }
 
 // bindings for buffers
-@group(0) @binding(0) var<storage, read> vertices: array<Vertex>; // idk
+@group(0) @binding(0) var<storage, read> vertices: array<Vertex>;
 
 @vertex
 fn vertex_main(vertex: Vertex) -> FragVertex {
     var out: FragVertex;
+    if (vertex.color.w == 0u) {
+        return out;
+    }
     out.clip_position = vec4<f32>((f32(vertex.position.x) / 32768.0) - 1.0, (f32(vertex.position.y) / -32768.0) + 1.0, 0.0, 1.0);
     out.color = vec4<f32>(f32(vertex.color.x) / 255.0, f32(vertex.color.y) / 255.0, f32(vertex.color.z) / 255.0, f32(vertex.color.w) / 255.0);
     return out;
@@ -21,5 +24,11 @@ fn vertex_main(vertex: Vertex) -> FragVertex {
 
 @fragment
 fn fragment_main(in: FragVertex) -> @location(0) vec4<f32> {
+    return in.color;
+}
+
+@fragment
+fn composite_main(in: FragVertex) -> @location(0) vec4<f32> {
+    // each pass for each frequency is passed in in a big texture, idk do math here
     return in.color;
 }
