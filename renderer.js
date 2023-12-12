@@ -6,9 +6,8 @@ class LightRenderer {
     #GPU;
     #config = {
         precision: 4, // how many divisions of a degree should be made
-        accuracy: 16, // how many rays should be sent for each angle
-        vertexAllocation: 64, // how many vertices are allocated per ray (change to dynamic sizing with hard cap later?)
-        maxSources: 8 // how many sources of light that can exist at a time
+        accuracy: 4, // how many rays should be sent for each angle
+        vertexAllocation: 64 // how many vertices are allocated per ray (change to dynamic sizing with hard cap later?)
     };
     #ready = false;
     #resources = {
@@ -34,19 +33,19 @@ class LightRenderer {
         },
         buffers: {
             grid: null,
-            sources: null,
             vertices: null,
+            params: null
         },
         bufferArrays: {
             grid: null,
-            sources: null,
-            vertices: null
+            vertices: null,
+            params: null
         },
         computeBindGroupLayout: null,
         renderBindGroupLayout: null,
         computeBindGroup: null,
         renderBindGroup: null,
-        computeWorkgroupSize: 0,
+        computeWorkgroupSize: [0, 4, 0],
         vertexCount: 0
     };
     #gridSize = gridSize;
@@ -71,32 +70,35 @@ class LightRenderer {
                 label: 'Light render shader',
                 code: await (await fetch('./lineShader.wgsl')).text()
             });
-            await this.#createPipelines();
+            this.compileShaders();
             this.#ready = true;
         };
         getGPU();
     }
 
-    async #createPipelines() {
-        this.#resources.vertexCount = 360 * this.#config.maxSources * this.#config.vertexAllocation * this.#config.accuracy * this.#config.precision;
+    compileShaders() {
+        if (this.#GPU == undefined) return;
+        this.#gridSize = gridSize;
+        this.#resources.computeWorkgroupSize = [this.#config.precision, 4, this.#config.accuracy];
+        this.#resources.vertexCount = 360 * this.#config.vertexAllocation * this.#config.precision * this.#config.accuracy;
         // create buffers
         this.#resources.bufferArrays.grid = new Uint8ClampedArray(this.#gridSize ** 2);
-        this.#resources.bufferArrays.sources = new Uint16Array(this.#config.maxSources * 2); // limited to max 64 sources
         this.#resources.bufferArrays.vertices = new BigUint64Array(this.#resources.vertexCount); // inefficient
+        this.#resources.bufferArrays.params = new Uint32Array(4);
         this.#resources.buffers.grid = this.#GPU.createBuffer({
             label: 'Grid buffer',
             size: this.#resources.bufferArrays.grid.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
         });
-        this.#resources.buffers.sources = this.#GPU.createBuffer({
-            label: 'Light source buffer',
-            size: this.#resources.bufferArrays.sources.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-        });
         this.#resources.buffers.vertices = this.#GPU.createBuffer({
             label: 'Light vertices',
             size: this.#resources.bufferArrays.vertices.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+        });
+        this.#resources.buffers.params = this.#GPU.createBuffer({
+            label: 'Light params buffer',
+            size: this.#resources.bufferArrays.params.byteLength,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
         // bind buffers
         this.#resources.computeBindGroupLayout = this.#GPU.createBindGroupLayout({
@@ -112,25 +114,25 @@ class LightRenderer {
                     binding: 1,
                     visibility: GPUShaderStage.COMPUTE,
                     buffer: {
-                        type: 'read-only-storage'
+                        type: 'storage'
                     }
                 },
                 {
                     binding: 2,
                     visibility: GPUShaderStage.COMPUTE,
                     buffer: {
-                        type: 'storage'
+                        type: 'uniform'
                     }
                 }
             ]
         });
         this.#resources.computeBindGroup = this.#GPU.createBindGroup({
-            label: 'Render bind group',
+            label: 'Compute bind group',
             layout: this.#resources.computeBindGroupLayout,
             entries: [
                 { binding: 0, resource: { buffer: this.#resources.buffers.grid } },
-                { binding: 1, resource: { buffer: this.#resources.buffers.sources } },
-                { binding: 2, resource: { buffer: this.#resources.buffers.vertices } }
+                { binding: 1, resource: { buffer: this.#resources.buffers.vertices } },
+                { binding: 2, resource: { buffer: this.#resources.buffers.params } }
             ]
         });
         this.#resources.renderBindGroupLayout = this.#GPU.createBindGroupLayout({
@@ -161,9 +163,8 @@ class LightRenderer {
                 module: this.#resources.computeModule,
                 entryPoint: 'compute_main',
                 constants: {
-                    grid_size: this.#gridSize,
                     ray_precision: this.#config.precision,
-                    ray_accuracy: this.#config.accuracy,
+                    // ray_accuracy: this.#config.accuracy,
                     vertex_allocation: this.#config.vertexAllocation
                 }
             }
@@ -187,59 +188,49 @@ class LightRenderer {
                 ]
             },
             primitive: {
-                topology: 'line-list'
+                topology: 'line-strip',
+                stripIndexFormat: 'uint16'
             },
         });
-        this.#resources.computeWorkgroupSize = this.#config.precision * this.#config.accuracy;
     }
 
-    // multiple passes for differnet wavelengths
     async render() {
         if (!this.#ready) return false;
-        this.#resources.bufferArrays.grid.set(grid.reduce((f, l) => { f.push(...l); return f; }, []));
-        this.#resources.bufferArrays.sources.fill(0);
+        this.#resources.bufferArrays.grid.set(grid.slice(0, this.#gridSize).reduce((f, r) => { f.push(...r.slice(0, this.#gridSize)); return f; }, []));
         this.#resources.bufferArrays.vertices.fill(BigInt(0));
-        const lightSources = [10, 10];
-        if (lightSources.length == 0) return;
-        this.#resources.bufferArrays.sources.set(lightSources);
-        this.#GPU.queue.writeBuffer(this.#resources.buffers.grid, 0, this.#resources.bufferArrays.grid);
-        this.#GPU.queue.writeBuffer(this.#resources.buffers.sources, 0, this.#resources.bufferArrays.sources);
-        this.#GPU.queue.writeBuffer(this.#resources.buffers.vertices, 0, this.#resources.bufferArrays.vertices);
-        let len = 16;
-        const vertices = new Uint8Array(16 * len); // same as 64-bit int array with length 3
-        for (let i = 0; i < len; i++) {
-            let j = 16 * i;
-            let fdijgjrgfhjukjfdkjfd = Math.round(i / (len - 1) * 65535);
-            vertices[j + 0] = fdijgjrgfhjukjfdkjfd;
-            vertices[j + 1] = fdijgjrgfhjukjfdkjfd >> 8;
-            vertices[j + 2] = 10000;
-            vertices[j + 3] = 10000 >> 8;
-            vertices[j + 4] = 255;
-            vertices[j + 7] = 255;
-            vertices[j + 8] = 20000;
-            vertices[j + 9] = 20000 >> 8;
-            vertices[j + 10] = 5000;
-            vertices[j + 11] = 5000 >> 8;
-            vertices[j + 14] = 255;
-            vertices[j + 15] = 255;
+        this.#resources.bufferArrays.params[0] = this.#gridSize;
+        const lightSources = grid.slice(0, this.#gridSize).reduce((f, r, y) => {
+            f.push(...r.slice(0, this.#gridSize).reduce((l, p, x) => {
+                if (p == pixNum.LIGHT_RED) l.push([x, y]);
+                return l;
+            }, []));
+            return f;
+        }, []);
+        for (let source of lightSources) {
+            console.log(source);
+            // run a compute/render pair - render is very fast for small amounts of vertices
+            // store to texture or something...
+            // also have to do multiple compute/render pairs for lights with multiple frequencies
         }
-        // console.log(vertices)
-        const b = new BigInt64Array(vertices.buffer);
-        this.#resources.bufferArrays.vertices.set(b);
+        this.#resources.bufferArrays.params[1] = 0;
+        this.#resources.bufferArrays.params[2] = mXGrid;
+        this.#resources.bufferArrays.params[3] = mYGrid;
+        this.#GPU.queue.writeBuffer(this.#resources.buffers.grid, 0, this.#resources.bufferArrays.grid);
         this.#GPU.queue.writeBuffer(this.#resources.buffers.vertices, 0, this.#resources.bufferArrays.vertices);
+        this.#GPU.queue.writeBuffer(this.#resources.buffers.params, 0, this.#resources.bufferArrays.params);
         const encoder = this.#GPU.createCommandEncoder();
         const computePass = encoder.beginComputePass();
         computePass.setPipeline(this.#resources.computePipeline);
         computePass.setBindGroup(0, this.#resources.computeBindGroup);
-        computePass.dispatchWorkgroups(this.#resources.computeWorkgroupSize, 4, lightSources.length / 2);
+        computePass.dispatchWorkgroups(...this.#resources.computeWorkgroupSize);
         computePass.end();
         const renderPass = encoder.beginRenderPass({
             colorAttachments: [
                 {
                     view: this.#CTX.getCurrentTexture().createView(),
                     loadOp: 'clear',
-                    clearValue: { r: 0, g: 0, b: 0, a: 0 },
-                    storeOp: 'store'
+                    storeOp: 'store',
+                    clearValue: { r: 0, g: 0, b: 0, a: 0 }
                 }
             ]
         });
@@ -248,17 +239,7 @@ class LightRenderer {
         renderPass.setVertexBuffer(0, this.#resources.buffers.vertices);
         renderPass.draw(this.#resources.vertexCount);
         renderPass.end();
-        const buhbuffer = this.#GPU.createBuffer({
-            label: 'useless buffer',
-            size: this.#resources.bufferArrays.vertices.byteLength,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-        });
-        encoder.copyBufferToBuffer(this.#resources.buffers.vertices, 0, buhbuffer, 0, this.#resources.bufferArrays.vertices.byteLength);
         this.#GPU.queue.submit([encoder.finish()]);
-        await buhbuffer.mapAsync(GPUMapMode.READ);
-        const sadfdsafdsafdsafdsafdsafdsaf = new Uint8Array(buhbuffer.getMappedRange());
-        console.log(sadfdsafdsafdsafdsafdsafdsaf);
-        buhbuffer.destroy();
     }
 
     get config() {

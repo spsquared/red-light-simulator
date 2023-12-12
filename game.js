@@ -70,6 +70,7 @@ function createGrid(size = 40) {
             grid[i][j] = pixNum.AIR;
         }
     }
+    renderer.compileShaders();
 };
 function loadSaveCode(code = saveCode) {
     saveCode = code;
@@ -322,7 +323,7 @@ async function draw() {
     prevMX = mX;
     prevMY = mY;
 };
-async function drawFrame() {
+function drawFrame() {
     // draw grid normally because who cares
     ctx.clearRect(0, 0, canvasResolution, canvasResolution);
     ctx.globalAlpha = 1;
@@ -345,10 +346,12 @@ async function drawFrame() {
         pixelData(curr).rectangles.push([gridSize - amount - 1, y, amount + 1, 1]);
     }
     for (let i in numPixels) {
-        if (numPixels[i].rectangles.length > 0) numPixels[i].draw(numPixels[i].rectangles, ctx);
+        if (numPixels[i].rectangles.length > 0) numPixels[i].draw(numPixels[i].rectangles, ctx, false);
     }
-    // overlay gpu stuff here (render to offscreen i guess)
-    ctx.drawImage(lightCanvas, 0, 0);
+    ctx.globalAlpha = 0.5;
+    let brushRect = calcBrushRectCoordinates(mXGrid, mYGrid);
+    pixels[(brush.lastMouseButton == 2 || removing) ? 'remove' : brush.pixel].draw([[brushRect.xmin, brushRect.ymin, brushRect.xmax - brushRect.xmin + 1, brushRect.ymax - brushRect.ymin + 1]], ctx, true);
+    if (renderLights) ctx.drawImage(lightCanvas, 0, 0);
 };
 function drawUI() {
     ctx.globalAlpha = 1;
@@ -501,6 +504,7 @@ function clickLine(x1, y1, x2, y2, remove, placePixel = brush.pixel, size = brus
         function act(cb) {
             for (let i = rect.ymin; i <= rect.ymax; i++) {
                 for (let j = rect.xmin; j <= rect.xmax; j++) {
+                    cb(j, i);
                 }
             }
             return false;

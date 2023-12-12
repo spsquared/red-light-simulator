@@ -2,9 +2,32 @@ const pixels = {
     air: {
         name: 'Air',
         description: 'NO RAYLEIGH SCATTERING HERE!!!!!!!!!!',
-        draw: (rectangles, ctx) => { },
+        draw: (rectangles, ctx, brush) => {
+            if (brush) {
+                ctx.fillStyle = 'rgb(255, 255, 255)';
+                forRectangles(rectangles, (x, y, w, h) => {
+                    fillPixels(x, y, w, h, ctx);
+                });
+            }
+        },
         refractiveIndex: 1.000293,
         extinctionCoefficient: 0,
+        pickable: true,
+        group: 0,
+        id: '',
+        numId: 0
+    },
+    concrete: {
+        name: 'Concrete',
+        description: 'Basic, versatile building pixel',
+        draw: (rectangles, ctx, brush) => {
+            ctx.fillStyle = 'rgb(75, 75, 75)';
+            forRectangles(rectangles, (x, y, w, h) => {
+                fillPixels(x, y, w, h, ctx);
+            });
+        },
+        refractiveIndex: 1,
+        extinctionCoefficient: 1,
         pickable: true,
         group: 0,
         id: '',
@@ -13,7 +36,7 @@ const pixels = {
     missing: {
         name: 'Missing Pixel',
         description: 'Doesn\'t exist lol',
-        draw: function (rectangles, ctx) {
+        draw: function (rectangles, ctx, brush) {
             forRectangles(rectangles, (x, y, w, h) => {
                 ctx.fillStyle = 'rgb(0, 0, 0)';
                 fillPixels(x, y, w, h, ctx);
@@ -25,6 +48,22 @@ const pixels = {
             });
         },
         refractiveIndex: 1,
+        extinctionCoefficient: 1,
+        pickable: false,
+        group: -1,
+        id: '',
+        numId: 0
+    },
+    remove: {
+        name: 'Brush Remove',
+        description: 'uhhh dont place it',
+        draw: function (rectangles, ctx, brush) {
+            forRectangles(rectangles, (x, y, w, h) => {
+                ctx.fillStyle = 'rgb(255, 0, 0)';
+                fillPixels(x, y, w, h, ctx);
+            });
+        },
+        refractiveIndex: 0,
         extinctionCoefficient: 1,
         pickable: false,
         group: -1,
