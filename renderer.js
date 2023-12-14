@@ -220,20 +220,20 @@ class LightRenderer {
         this.#resources.bufferArrays.params[0] = this.#gridSize;
         const lightSources = grid.slice(0, this.#gridSize).reduce((f, r, y) => {
             f.push(...r.slice(0, this.#gridSize).reduce((l, p, x) => {
-                if (p == pixNum.LIGHT_RED) l.push([x, y]);
+                if (p == pixNum.LIGHT_WHITE) l.push([x, y]);
                 return l;
             }, []));
             return f;
         }, []);
         for (let source of lightSources) {
-            console.log(source);
+            // console.log(source);
             // run a compute/render pair - render is very fast for small amounts of vertices
             // store to texture or something... (can fragment shader read from current values?)
             // also have to do multiple compute/render pairs for lights with multiple frequencies
             // use index buffer to avoid drawing unused vertices?
             // have to do second compute pass for that
         }
-        this.#resources.bufferArrays.params[1] = 0;
+        this.#resources.bufferArrays.params[1] = buhwavelength;
         this.#resources.bufferArrays.params[2] = mXGrid;
         this.#resources.bufferArrays.params[3] = mYGrid;
         this.#GPU.queue.writeBuffer(this.#resources.buffers.grid, 0, this.#resources.bufferArrays.grid);
@@ -251,7 +251,8 @@ class LightRenderer {
                 view: this.#CTX.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
-                clearValue: { r: 0, g: 0, b: 0, a: 0 }
+                // clearValue: { r: 0, g: 0, b: 0, a: 0 }
+                clearValue: { r: buh[0] / 255, g: buh[1] / 255, b: buh[2] / 255, a: buh[3] / 255 }
             }]
         });
         renderPass.setPipeline(this.#resources.renderPipeline);
@@ -270,3 +271,59 @@ class LightRenderer {
         return this.#ready;
     }
 }
+
+function wavelengthToRGB2(lambda) {
+    let gamma = 0.8, f = 0, r = 0, g = 0, b = 0;
+    if (lambda >= 380) {
+        if (lambda >= 440) {
+            if (lambda >= 490) {
+                if (lambda >= 510) {
+                    if (lambda >= 580) {
+                        if (lambda >= 645) {
+                            if (lambda < 781) r = 1;
+                            else return [0, 0, 0, 0];
+                        } else {
+                            r = 1
+                            g = -(lambda - 645) / 65;
+                        }
+                    } else {
+                        r = (lambda - 510) / 70;
+                        g = 1;
+                    }
+                } else {
+                    g = 1;
+                    b = -(lambda - 510) / 20;
+                }
+            } else {
+                g = (lambda - 440) / 50;
+                b = 1;
+            }
+        } else {
+            r = -(lambda - 440) / 60;
+            b = 1;
+            if (lambda < 420) {
+                f = 0.3 + (lambda - 380) * 0.0175; // 0.7 / 40
+                // return [Math.round(255 * ((r * f) ** gamma)), Math.round(255 * ((g * f) ** gamma)), Math.round(255 * ((b * f) ** gamma))];
+                return [Math.round(255 * r), Math.round(255 * g), Math.round(255 * b), Math.round(255 * f ** gamma)];
+            }
+        }
+        if (lambda >= 420) {
+            if (lambda >= 701) {
+                if (lambda < 781) f = 0.3 + (780 - lambda) * 0.00875 // 0.7 / 80
+            } else {
+                f = 1;
+            }
+            // return [Math.round(255 * ((r * f) ** gamma)), Math.round(255 * ((g * f) ** gamma)), Math.round(255 * ((b * f) ** gamma))];
+            return [Math.round(255 * r), Math.round(255 * g), Math.round(255 * b), Math.round(255 * f ** gamma)];
+        }
+    }
+    return [0, 0, 0, 0];
+};
+
+let buhwavelength = 0;
+let buh = [];
+setInterval(() => {
+    buhwavelength = (performance.now() / 3000 * 200) % 200 + 600;
+    buh = wavelengthToRGB2(buhwavelength);
+    backgroundColor = `rgba(${buh[0]}, ${buh[1]}, ${buh[2]}, ${buh[3] / 255})`
+}, 50);

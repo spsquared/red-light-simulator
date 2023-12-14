@@ -34,11 +34,7 @@ struct Ray {
 
 // buffer stuff
 fn writeVertex(i: u32, v: Vertex) {
-    vertices[i * 2] = ((u32(clamp(v.pos.y, 0, 65535)) & 0xffffu) << 16) | (u32(clamp(v.pos.x, 0, 65535)) & 0xffffu);
-    vertices[i * 2 + 1] = ((v.color.w & 0xffu) << 24) | ((v.color.z & 0xffu) << 16) | ((v.color.y & 0xffu) << 8) | (v.color.x & 0xffu);
-}
-fn writeVertexUnsafe(i: u32, v: Vertex) {
-    vertices[i * 2] = (u32(v.pos.y) << 16) | u32(v.pos.x);
+    vertices[i * 2] = (clamp(u32(v.pos.y), 0, 65535) << 16) | clamp(u32(v.pos.x), 0, 65535);
     vertices[i * 2 + 1] = (v.color.w << 24) | (v.color.z << 16) | (v.color.y << 8) | v.color.x;
 }
 
@@ -73,12 +69,13 @@ fn wavelengthToColor(l: u32) -> vec4<u32> {
                 if l >= 510u {
                     if l >= 580u {
                         if l >= 645u {
-                            if l >= 781u {
+                            if l < 781u {
                                 r = 1.0;
                             } else {
                                 return vec4<u32>(0u, 0u, 0u, 0u);
                             }
                         } else {
+                            // bug here
                             r = 1.0;
                             g = f32(l - 645u) / -65.0;
                         }
@@ -99,18 +96,18 @@ fn wavelengthToColor(l: u32) -> vec4<u32> {
             b = 1.0;
             if l < 420u {
                 a = 0.3 + f32(l - 380u) * 0.0175; // 0.7 / 40
-                return vec4<u32>(u32(255 * r), u32(255 * g), u32(255 * b), u32(pow(a, gamma)));
+                return vec4<u32>(u32(255.0 * r), u32(255.0 * g), u32(255.0 * b), u32(255.0 * pow(a, gamma)));
             }
         }
         if l >= 420u {
-            if l >= 701 {
-                if l < 781 {
+            if l >= 701u {
+                if l < 781u {
                     a = 0.3 + f32(780u - l) * 0.00875; // 0.7 / 80
                 }
             } else {
                 a = 1.0;
             }
-            return vec4<u32>(u32(255 * r), u32(255 * g), u32(255 * b), u32(pow(a, gamma)));
+            return vec4<u32>(u32(255.0 * r), u32(255.0 * g), u32(255.0 * b), u32(255.0 * pow(a, gamma)));
         }
     }
     return vec4<u32>(0u, 0u, 0u, 0u);
@@ -136,22 +133,18 @@ fn compute_main(thread: ComputeInput) {
         vec2<f32>(vec2<f32>(params.source) * grid_scale + grid_scale * 0.5),
         vec2<f32>(cos(ray_start_angle), sin(ray_start_angle))
     );
+    let color: vec4<u32> = wavelengthToColor(params.wavelength);
     var vertex: Vertex;
-    vertex.pos = clampAlongDir(ray.pos, ray.dir, 0.0, 65535.0, 0.0, 65535.0);
     vertex.pos = ray.pos;
-    vertex.color = vec4<u32>(0u, 0u, 255u, 255u);
+    vertex.color = color;
     writeVertex(vertex_start + vertex_index, vertex);
     vertex_index++;
     vertex.pos = ray.pos + ray.dir * 10000;
-    vertex.color = vec4<u32>(255u, 0u, 0u, 255u);
+    vertex.color = vec4<u32>(0u, 0u, 0u, 255u);
     writeVertex(vertex_start + vertex_index, vertex);
     vertex_index++;
-    vertex.pos = ray.pos + vec2<f32>(ray.dir.x * 20000, round(ray.dir.y) * 10000);
-    vertex.color = vec4<u32>(0u, 255u, 0u, 255u);
-    writeVertex(vertex_start + vertex_index, vertex);
-    vertex_index++;
-    vertex.pos = ray.pos + ray.dir * 25000;
-    vertex.color = vec4<u32>(0u, 255u, 255u, 255u);
+    vertex.pos = ray.pos + ray.dir * 15000;
+    vertex.color = vec4<u32>(255u, 255u, 255u, 255u);
     writeVertex(vertex_start + vertex_index, vertex);
     vertex_index++;
     // collision calculations

@@ -12,7 +12,9 @@ function createCanvas() {
     }
 };
 const lightCanvas = createCanvas();
+const bufferCanvas = createCanvas();
 const ctx = canvas.getContext('2d');
+const bufferctx = bufferCanvas.getContext('2d');
 function resetCanvases() {
     ctx.imageSmoothingEnabled = false;
     ctx.webkitImageSmoothingEnabled = false;
@@ -172,12 +174,12 @@ function loadSaveCode(code = saveCode) {
         if (sections[1]) {
             // settings and stuff
         }
-        if (sections[2]) parseSaveCode(sections[2], 10);
+        if (sections[2]) parseSaveCode(sections[2], 16);
     }
     window.localStorage.setItem('saveCode', saveCode);
 };
 function generateSaveCode() {
-    let saveCode = `${gridSize};`;
+    let saveCode = `${gridSize};;`;
     let pixel = -1;
     let amount = 0;
     for (let i = 0; i < gridSize; i++) {
@@ -255,6 +257,9 @@ window.addEventListener('load', (e) => {
 });
 
 // shared pixel functions
+function drawPixels(type, rectangles, ctx, brush = false) {
+    (numPixels[type] ?? numPixels[pixNum.MISSING]).draw(rectangles, ctx, brush);
+};
 function forRectangles(rectangles, cb) {
     for (let rect of rectangles) {
         cb(...rect);
@@ -302,7 +307,11 @@ async function draw() {
 
     updateBrush();
     drawFrame();
-    if (renderLights) renderer.render();
+    if (renderLights) {
+        renderer.render();
+        ctx.drawImage(lightCanvas, 0, 0);
+    }
+    drawBrush();
     frameList.push(performance.now());
 
     let now = performance.now();
@@ -348,11 +357,21 @@ function drawFrame() {
     for (let i in numPixels) {
         if (numPixels[i].rectangles.length > 0) numPixels[i].draw(numPixels[i].rectangles, ctx, false);
     }
-    ctx.globalAlpha = 0.5;
-    let brushRect = calcBrushRectCoordinates(mXGrid, mYGrid);
-    pixels[(brush.lastMouseButton == 2 || removing) ? 'remove' : brush.pixel].draw([[brushRect.xmin, brushRect.ymin, brushRect.xmax - brushRect.xmin + 1, brushRect.ymax - brushRect.ymin + 1]], ctx, true);
-    if (renderLights) ctx.drawImage(lightCanvas, 0, 0);
 };
+function drawBrush() {
+    ctx.globalAlpha = 0.5;
+    const placePixelNum = pixels[(brush.lastMouseButton == 2 || removing) ? 'remove' : brush.pixel].numId;
+    if (brush.lineMode) {
+        bufferctx.clearRect(0, 0, canvasResolution, canvasResolution);
+        brushActionLine(brush.lineStartX, brush.lineStartY, mXGrid, mYGrid, brush.size, (rect) => {
+            drawPixels(placePixelNum, [[rect.xmin, rect.ymin, rect.xmax - rect.xmin + 1, rect.ymax - rect.ymin + 1]], bufferctx, true);
+        });
+        ctx.drawImage(bufferCanvas, 0, 0);
+    } else {
+        let rect = calcBrushRectCoordinates(mXGrid, mYGrid);
+        drawPixels(placePixelNum, [[rect.xmin, rect.ymin, rect.xmax - rect.xmin + 1, rect.ymax - rect.ymin + 1]], ctx, true);
+    }
+}
 function drawUI() {
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#000';
@@ -479,20 +498,21 @@ function traceGridLine(x1, y1, x2, y2, cb) {
     }
 };
 function brushActionLine(x1, y1, x2, y2, size, cb) {
+    // THIS IS NOT SPAGHETTI
     let slope = (y2 - y1) / (x2 - x1);
     if (!isFinite(slope)) {
         cb({
-            xmin: Math.max(0, Math.min(x1 - size + 1, gridSize - 1)),
-            xmax: Math.max(0, Math.min(x1 + size - 1, gridSize - 1)),
-            ymin: Math.max(0, Math.min(Math.min(y2, y1) - size + 1, gridSize - 1)),
-            ymax: Math.max(0, Math.min(Math.max(y2, y1) + size - 1, gridSize - 1))
+            xmin: Math.max(0, Math.min(x1 - size + 1, gridSize)),
+            xmax: Math.max(-1, Math.min(x1 + size - 1, gridSize - 1)),
+            ymin: Math.max(0, Math.min(Math.min(y2, y1) - size + 1, gridSize)),
+            ymax: Math.max(-1, Math.min(Math.max(y2, y1) + size - 1, gridSize - 1))
         });
     } else if (slope == 0) {
         cb({
-            xmin: Math.max(0, Math.min(Math.min(x2, x1) - size + 1, gridSize - 1)),
-            xmax: Math.max(0, Math.min(Math.max(x2, x1) + size - 1, gridSize - 1)),
-            ymin: Math.max(0, Math.min(y1 - size + 1, gridSize - 1)),
-            ymax: Math.max(0, Math.min(y1 + size - 1, gridSize - 1))
+            xmin: Math.max(0, Math.min(Math.min(x2, x1) - size + 1, gridSize)),
+            xmax: Math.max(-1, Math.min(Math.max(x2, x1) + size - 1, gridSize - 1)),
+            ymin: Math.max(0, Math.min(y1 - size + 1, gridSize)),
+            ymax: Math.max(-1, Math.min(y1 + size - 1, gridSize - 1))
         });
     } else {
         traceGridLine(x1, y1, x2, y2, (x, y) => cb(calcBrushRectCoordinates(x, y, size)));

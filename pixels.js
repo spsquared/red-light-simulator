@@ -33,6 +33,22 @@ const pixels = {
         id: '',
         numId: 0
     },
+    light_white: {
+        name: 'White Light',
+        description: 'Glowy white thing that lags',
+        draw: (rectangles, ctx, brush) => {
+            ctx.fillStyle = 'rgb(255, 255, 255)';
+            forRectangles(rectangles, (x, y, w, h) => {
+                fillPixels(x, y, w, h, ctx);
+            });
+        },
+        refractiveIndex: 1,
+        extinctionCoefficient: 0,
+        pickable: true,
+        group: 1,
+        id: '',
+        numId: 0
+    },
     missing: {
         name: 'Missing Pixel',
         description: 'Doesn\'t exist lol',
@@ -94,7 +110,7 @@ window.addEventListener('load', async (e) => {
     ctx2.webkitImageSmoothingEnabled = false;
     gridScale = 50;
     const promiseList = [];
-    const groupNames = ['General'];
+    const groupNames = ['General', 'Lights'];
     for (const id in pixels) {
         const pixel = pixels[id];
         ctx2.fillStyle = 'rgb(255, 255, 255)';
