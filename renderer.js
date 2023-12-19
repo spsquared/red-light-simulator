@@ -249,10 +249,11 @@ class LightRenderer {
         const renderPass = encoder.beginRenderPass({
             colorAttachments: [{
                 view: this.#CTX.getCurrentTexture().createView(),
+                // loadOp: 'load',
                 loadOp: 'clear',
                 storeOp: 'store',
-                // clearValue: { r: 0, g: 0, b: 0, a: 0 }
-                clearValue: { r: buh[0] / 255, g: buh[1] / 255, b: buh[2] / 255, a: buh[3] / 255 }
+                // change blend modes for color blending to not suck
+                clearValue: { r: 0, g: 0, b: 0, a: 0 }
             }]
         });
         renderPass.setPipeline(this.#resources.renderPipeline);
@@ -280,8 +281,11 @@ function wavelengthToRGB2(lambda) {
                 if (lambda >= 510) {
                     if (lambda >= 580) {
                         if (lambda >= 645) {
-                            if (lambda < 781) r = 1;
-                            else return [0, 0, 0, 0];
+                            if (lambda <= 780) {
+                                r = 1;
+                            } else {
+                                return [0, 0, 0, 0];
+                            }
                         } else {
                             r = 1
                             g = -(lambda - 645) / 65;
@@ -302,14 +306,14 @@ function wavelengthToRGB2(lambda) {
             r = -(lambda - 440) / 60;
             b = 1;
             if (lambda < 420) {
-                f = 0.3 + (lambda - 380) * 0.0175; // 0.7 / 40
+                f = (lambda - 380) / 40; // 0.7 / 40
                 // return [Math.round(255 * ((r * f) ** gamma)), Math.round(255 * ((g * f) ** gamma)), Math.round(255 * ((b * f) ** gamma))];
                 return [Math.round(255 * r), Math.round(255 * g), Math.round(255 * b), Math.round(255 * f ** gamma)];
             }
         }
         if (lambda >= 420) {
-            if (lambda >= 701) {
-                if (lambda < 781) f = 0.3 + (780 - lambda) * 0.00875 // 0.7 / 80
+            if (lambda > 700) {
+                if (lambda <= 780) f = (780 - lambda) / 80 // 0.7 / 80
             } else {
                 f = 1;
             }
@@ -323,7 +327,7 @@ function wavelengthToRGB2(lambda) {
 let buhwavelength = 0;
 let buh = [];
 setInterval(() => {
-    buhwavelength = (performance.now() / 3000 * 200) % 200 + 600;
+    buhwavelength = (performance.now() / 3000 * 400) % 400 + 350;
     buh = wavelengthToRGB2(buhwavelength);
     backgroundColor = `rgba(${buh[0]}, ${buh[1]}, ${buh[2]}, ${buh[3] / 255})`
 }, 50);
