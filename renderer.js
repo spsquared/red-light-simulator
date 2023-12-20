@@ -87,7 +87,7 @@ class LightRenderer {
         this.#resources.bufferArrays.grid = new Uint8ClampedArray(this.#gridSize ** 2);
         this.#resources.bufferArrays.vertices = new BigUint64Array(360 * this.#config.vertexAllocation * this.#config.precision * this.#config.accuracy); // inefficient
         this.#resources.bufferArrays.vertexIndices = new Uint32Array(this.#resources.indexCount);
-        this.#resources.bufferArrays.params = new Uint32Array(4);
+        this.#resources.bufferArrays.params = new Uint32Array(8);
         for (let i = 0; i < 360 * this.#config.precision * this.#config.accuracy; i++) {
             let istart = i * (this.#config.vertexAllocation + 1);
             let vstart = i * this.#config.vertexAllocation;
@@ -201,8 +201,13 @@ class LightRenderer {
                 module: this.#resources.renderModule,
                 entryPoint: 'fragment_main',
                 targets: [
-                    // change alpha blending for different light intensity effects
-                    { format: navigator.gpu.getPreferredCanvasFormat() }
+                    {
+                        format: navigator.gpu.getPreferredCanvasFormat(),
+                        blend: {
+                            color: { operation: 'add', srcFactor: 'src', dstFactor: 'zero' },
+                            alpha: { operation: 'add', srcFactor: 'src', dstFactor: 'zero' }
+                        }
+                    }
                 ]
             },
             primitive: {
@@ -233,9 +238,13 @@ class LightRenderer {
             // use index buffer to avoid drawing unused vertices?
             // have to do second compute pass for that
         }
-        this.#resources.bufferArrays.params[1] = buhwavelength;
+        this.#resources.bufferArrays.params[1] = 580;
         this.#resources.bufferArrays.params[2] = mXGrid;
         this.#resources.bufferArrays.params[3] = mYGrid;
+        this.#resources.bufferArrays.params[4] = 100 * Math.random();
+        this.#resources.bufferArrays.params[5] = 100 * Math.random();
+        this.#resources.bufferArrays.params[6] = 1 + Math.random();
+        this.#resources.bufferArrays.params[7] = 1 + Math.random();
         this.#GPU.queue.writeBuffer(this.#resources.buffers.grid, 0, this.#resources.bufferArrays.grid);
         this.#GPU.queue.writeBuffer(this.#resources.buffers.vertices, 0, this.#resources.bufferArrays.vertices);
         this.#GPU.queue.writeBuffer(this.#resources.buffers.params, 0, this.#resources.bufferArrays.params);
@@ -249,10 +258,8 @@ class LightRenderer {
         const renderPass = encoder.beginRenderPass({
             colorAttachments: [{
                 view: this.#CTX.getCurrentTexture().createView(),
-                // loadOp: 'load',
                 loadOp: 'clear',
                 storeOp: 'store',
-                // change blend modes for color blending to not suck
                 clearValue: { r: 0, g: 0, b: 0, a: 0 }
             }]
         });
@@ -272,62 +279,3 @@ class LightRenderer {
         return this.#ready;
     }
 }
-
-function wavelengthToRGB2(lambda) {
-    let gamma = 0.8, f = 0, r = 0, g = 0, b = 0;
-    if (lambda >= 380) {
-        if (lambda >= 440) {
-            if (lambda >= 490) {
-                if (lambda >= 510) {
-                    if (lambda >= 580) {
-                        if (lambda >= 645) {
-                            if (lambda <= 780) {
-                                r = 1;
-                            } else {
-                                return [0, 0, 0, 0];
-                            }
-                        } else {
-                            r = 1
-                            g = -(lambda - 645) / 65;
-                        }
-                    } else {
-                        r = (lambda - 510) / 70;
-                        g = 1;
-                    }
-                } else {
-                    g = 1;
-                    b = -(lambda - 510) / 20;
-                }
-            } else {
-                g = (lambda - 440) / 50;
-                b = 1;
-            }
-        } else {
-            r = -(lambda - 440) / 60;
-            b = 1;
-            if (lambda < 420) {
-                f = (lambda - 380) / 40; // 0.7 / 40
-                // return [Math.round(255 * ((r * f) ** gamma)), Math.round(255 * ((g * f) ** gamma)), Math.round(255 * ((b * f) ** gamma))];
-                return [Math.round(255 * r), Math.round(255 * g), Math.round(255 * b), Math.round(255 * f ** gamma)];
-            }
-        }
-        if (lambda >= 420) {
-            if (lambda > 700) {
-                if (lambda <= 780) f = (780 - lambda) / 80 // 0.7 / 80
-            } else {
-                f = 1;
-            }
-            // return [Math.round(255 * ((r * f) ** gamma)), Math.round(255 * ((g * f) ** gamma)), Math.round(255 * ((b * f) ** gamma))];
-            return [Math.round(255 * r), Math.round(255 * g), Math.round(255 * b), Math.round(255 * f ** gamma)];
-        }
-    }
-    return [0, 0, 0, 0];
-};
-
-let buhwavelength = 0;
-let buh = [];
-setInterval(() => {
-    buhwavelength = (performance.now() / 3000 * 400) % 400 + 350;
-    buh = wavelengthToRGB2(buhwavelength);
-    backgroundColor = `rgba(${buh[0]}, ${buh[1]}, ${buh[2]}, ${buh[3] / 255})`
-}, 50);

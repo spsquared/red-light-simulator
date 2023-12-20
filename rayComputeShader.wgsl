@@ -14,9 +14,12 @@ fn writeVertex(i: u32, v: Vertex) {
 }
 
 // pixel constants, hardcoded
-const PIXELDATA: array<PixelData, 2> = array(
-    PixelData(1.000293, 0.01, 0.0, 0.0),
-    PixelData(1.0, 1.0, 0.0, 170.8),
+const PIXELDATA: array<PixelData, 5> = array(
+    PixelData(1.000293, 0.01, vec4<f32>(0.0, 0.0, 0.0, 0.0), 0.0),
+    PixelData(2.55, 0.8, vec4<f32>(0.0, 0.0, 0.0, 0.0), 170.8), // no listed attenuation coefficient?
+    PixelData(1.000293, 0.0, vec4<f32>(0.0, 0.0, 0.0, 0.0), 0.0),
+    PixelData(1.0, 1.0, vec4<f32>(0.0, 0.0, 0.0, 0.0), 0.0),
+    PixelData(1.0, 1.0, vec4<f32>(0.0, 0.0, 0.0, 0.0), 0.0),
 );
 
 // struct stuff
@@ -28,7 +31,8 @@ struct ComputeParams {
 struct BufParams {
     grid_size: u32,
     wavelength: u32, // idk nanometers or something
-    source: vec2<u32>
+    source: vec2<u32>,
+    random_seed: vec4<f32>
 }
 struct Vertex {
     pos: vec2<f32>,
@@ -42,22 +46,22 @@ struct Ray {
 struct PixelData {
     refract_index: f32,
     extinction_coeff: f32,
-    abbe_num: f32,
+    sellmeier_coeff: vec4<f32>,
     roughness: f32 // root mean square height (standard deviation of normal vector)
 }
 
 // utilities and stuff
 var<private> grid_scale: f32;
 var<private> rand_seed : vec2<f32>;
-fn init_rand(invocation_id : u32, seed : vec4<f32>) {
-  rand_seed = seed.xz;
-  rand_seed = fract(rand_seed * cos(35.456+f32(invocation_id) * seed.yw));
-  rand_seed = fract(rand_seed * cos(41.235+f32(invocation_id) * seed.xw));
+fn init_rand(invocation_id: u32, seed: vec4<f32>) {
+    rand_seed = seed.xz;
+    rand_seed = fract(rand_seed * cos(35.456 + f32(invocation_id) * seed.yw));
+    rand_seed = fract(rand_seed * cos(41.235 + f32(invocation_id) * seed.xw));
 }
 fn rand() -> f32 {
-  rand_seed.x = fract(cos(dot(rand_seed, vec2<f32>(23.14077926, 232.61690225))) * 136.8168);
-  rand_seed.y = fract(cos(dot(rand_seed, vec2<f32>(54.47856553, 345.84153136))) * 534.7645);
-  return rand_seed.y;
+    rand_seed.x = fract(cos(dot(rand_seed, vec2<f32>(23.14077926, 232.61690225))) * 136.8168);
+    rand_seed.y = fract(cos(dot(rand_seed, vec2<f32>(54.47856553, 345.84153136))) * 534.7645);
+    return rand_seed.y;
 }
 // light stuff
 @must_use
@@ -123,11 +127,11 @@ fn toSRGB(c: vec4<u32>) -> vec4<u32> {
 }
 @must_use
 fn gridAt(pos: vec2<u32>) -> u32 {
-    return grid[clamp(pos.y * params.grid_size, 0u, params.grid_size) + clamp(pos.x, 0u, params.grid_size)];
+    return (grid[((clamp(pos.y, 0u, params.grid_size) * params.grid_size) + clamp(pos.x, 0u, params.grid_size)) / 4u] >> ((pos.x % 4) * 8)) & 0xffu;
 }
 @must_use
 fn gridAtPos(pos: vec2<f32>) -> u32 {
-    return grid[(clamp(u32(pos.y / grid_scale), 0u, params.grid_size) * params.grid_size) + clamp(u32(pos.x / grid_scale), 0u, params.grid_size)];
+    return (grid[((clamp(u32(pos.y / grid_scale), 0u, params.grid_size) * params.grid_size) + clamp(u32(pos.x / grid_scale), 0u, params.grid_size)) / 4u] >> ((u32(pos.x / grid_scale) % 4) * 8)) & 0xffu;
 }
 
 // workgroup id
@@ -143,14 +147,14 @@ fn compute_main(thread: ComputeParams) {
     grid_scale = 65535.0 / f32(params.grid_size);
     let vertex_start: u32 = vertex_allocation * ((((360u * thread.workgroup_id.z) + (thread.thread_id.x + thread.workgroup_id.y * 90u)) * ray_precision) + thread.workgroup_id.x);
     var vertex_index: u32 = 0u;
-    let ray_start_angle: f32 = radians(f32(thread.thread_id.x + thread.workgroup_id.y * 90u) + (f32(thread.workgroup_id.x) / f32(ray_precision)));
+    let ray_start_angle: f32 = radians(f32(thread.thread_id.x + thread.workgroup_id.y * 90u) + (f32(thread.workgroup_id.x) / f32(ray_precision))) + 0.0001;
     var ray: Ray = Ray(
         vec2<f32>(vec2<f32>(params.source) * grid_scale + grid_scale * 0.5),
         vec2<f32>(cos(ray_start_angle), sin(ray_start_angle)),
         1.0
     );
     let color: vec4<f32> = wavelengthToColor(params.wavelength);
-    init_rand(thread.local_invocation_index, color);
+    init_rand(thread.local_invocation_index, params.random_seed);
     var vertex: Vertex;
     // source point
     vertex.pos = ray.pos;
@@ -159,15 +163,15 @@ fn compute_main(thread: ComputeParams) {
     vertex_index++;
     // simulation loop (does defining outside actually make it faster?)
     var dir_normals: vec2<f32> = sign(ray.dir);
-    var grid_pos: vec2<f32>;
+    var grid_pos: vec2<f32> = ray.pos / grid_scale;
     var grid_step: vec2<f32>;
     var step_move: vec2<f32>;
     var step_dist: f32;
     var col_normal: vec2<f32>;
     var col_pix: u32;
-    var last_pix: u32;
-    //  && ray.pos.x >= 0.0 && ray.pos.x <= 65535.0 && ray.pos.y >= 0.0 && ray.pos.y <= 65535.0
-    for (var i: u32 = 1u; i < vertex_allocation && ray.intensity > 0; i++) {
+    var last_pix: u32 = gridAt(vec2<u32>(u32(grid_pos.x), u32(grid_pos.y)));
+    var col_dot: f32;
+    for (var i: u32 = 1u; i < vertex_allocation && ray.intensity > 0 && ray.pos.x >= 0.0 && ray.pos.x <= 65535.0 && ray.pos.y >= 0.0 && ray.pos.y <= 65535.0; i++) {
         // step to next grid edge
         grid_pos = ray.pos / grid_scale;
         grid_step = clamp(grid_pos + dir_normals, floor(grid_pos), ceil(grid_pos)) - grid_pos; // perp distance to nearest gridlines
@@ -178,23 +182,42 @@ fn compute_main(thread: ComputeParams) {
             col_pix = gridAt(vec2<u32>(u32(grid_pos.x + dir_normals.x), u32(grid_pos.y)));
             col_normal = vec2<f32>(-dir_normals.x, 0.0);
             ray.pos.x = ray.pos.x + grid_step.x * grid_scale + 0.01 * dir_normals.x;
-            ray.pos.y = ray.pos.y + step_move.y * grid_scale + 0.01 * dir_normals.y;
+            ray.pos.y = select(ray.pos.y + step_move.y * grid_scale + 0.01 * dir_normals.y, ray.pos.y, ray.dir.x == 0.0);
         } else {
             // y axis reached before x axis or edge case
             step_move.x = grid_step.y * ray.dir.x / ray.dir.y; // distance x to reach y gridline
             step_dist = length(vec2<f32>(step_move.x, grid_step.y));
             col_pix = gridAt(vec2<u32>(u32(grid_pos.x), u32(grid_pos.y + dir_normals.y)));
             col_normal = vec2<f32>(0.0, -dir_normals.y);
-            ray.pos.x = ray.pos.x + step_move.x * grid_scale + 0.01 * dir_normals.x;
+            ray.pos.x = select(ray.pos.x + step_move.x * grid_scale + 0.01 * dir_normals.x, ray.pos.x, ray.dir.y == 0.0);
             ray.pos.y = ray.pos.y + grid_step.y * grid_scale + 0.01 * dir_normals.y;
         }
-        // test vertices
-        vertex.pos = ray.pos;
-        vertex.color = vec4<f32>(grid_pos.x / f32(params.grid_size), grid_pos.y / f32(params.grid_size), f32(i) / f32(vertex_allocation / 2), 0.5);
-        writeVertex(vertex_start + vertex_index, vertex);
-        vertex_index++;
-        // um refraction?
-        // do stuff based on distance
-        // if pixel change stick vertex
+        if col_pix != last_pix {
+            // collision!
+            // modify normal vector based on roughness value (which is the standard deviation of normal vectors)
+            // inverse normal distribution
+            // quantile function??
+            col_dot = dot(ray.dir, col_normal);
+            // incident_angle = acos(col_dot);
+            // fresnel equations probability of reflection/refraction
+            // snell's law moment
+            // test thing
+            ray.dir = ray.dir - (2 * col_normal * col_dot);
+            dir_normals = sign(ray.dir);
+            // only update current medium when refracting
+            // last_pix = col_pix;
+            // modify values and place vertex
+            vertex.pos = ray.pos;
+            vertex.color = vec4<f32>(grid_pos.x / f32(params.grid_size), grid_pos.y / f32(params.grid_size), f32(i) / f32(vertex_allocation / 2), 1.0);
+            if col_pix != 0 {
+                vertex.color.z = 1.0;
+            }
+            writeVertex(vertex_start + vertex_index, vertex);
+            vertex_index++;
+        }
     }
+    vertex.pos = ray.pos;
+    vertex.color = color;
+    writeVertex(vertex_start + vertex_index, vertex);
+    vertex_index++;
 }

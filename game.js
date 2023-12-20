@@ -239,7 +239,6 @@ function loadStoredSave() {
     saveCodeText.oninput();
 };
 window.addEventListener('load', (e) => {
-    loadStoredSave();
     if (typeof window.requestIdleCallback == 'function') {
         setInterval(() => {
             window.requestIdleCallback(() => {
@@ -402,7 +401,7 @@ function drawUI() {
     ctx.fillText(brushLocationText, canvasResolution - 6, 47);
 };
 async function getRenderer() {
-    window.getGPU = undefined;
+    window.getRenderer = undefined;
     // atrocities
     const renderer = new LightRenderer(lightCanvas);
     Object.defineProperty(window, 'renderer', {
@@ -411,21 +410,23 @@ async function getRenderer() {
         value: await renderer,
         writable: false,
     });
+    await renderer;
 };
 async function startDrawLoop() {
     window.startDrawLoop = undefined;
+    await getRenderer();
+    loadStoredSave();
     let start;
     while (true) {
         start = performance.now();
         await new Promise((resolve, reject) => {
             window.requestAnimationFrame(async () => {
                 await draw(renderer);
-                setTimeout(resolve, ~~(1000 / targetFps - (performance.now() - start) - 1));
+                setTimeout(resolve, ~~(1000 / (document.hidden ? 1 : targetFps) - (performance.now() - start) - 1));
             });
         });
     }
 };
-getRenderer();
 window.addEventListener('load', startDrawLoop);
 
 // brush
