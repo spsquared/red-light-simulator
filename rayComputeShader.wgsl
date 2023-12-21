@@ -14,12 +14,13 @@ fn writeVertex(i: u32, v: Vertex) {
 }
 
 // pixel constants, hardcoded
-const PIXELDATA: array<PixelData, 5> = array(
-    PixelData(1.000293, 0.01, vec4<f32>(0.0, 0.0, 0.0, 0.0), 0.0),
-    PixelData(2.55, 0.8, vec4<f32>(0.0, 0.0, 0.0, 0.0), 170.8), // no listed attenuation coefficient?
-    PixelData(1.000293, 0.0, vec4<f32>(0.0, 0.0, 0.0, 0.0), 0.0),
-    PixelData(1.0, 1.0, vec4<f32>(0.0, 0.0, 0.0, 0.0), 0.0),
-    PixelData(1.0, 1.0, vec4<f32>(0.0, 0.0, 0.0, 0.0), 0.0),
+const pixel_data: array<PixelData, 6> = array(
+    PixelData(0.01, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // air
+    PixelData(0.9, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 170.8), // concrete
+    PixelData(0.0, array<f32, 6>(0.6961663, 0.4079426, 0.8974794, 0.0684043, 0.1162414, 9.896161), 0.1), // glass
+    PixelData(0.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // white light
+    PixelData(1.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // missing pixel
+    PixelData(1.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // brush remove
 );
 
 // struct stuff
@@ -44,25 +45,42 @@ struct Ray {
     intensity: f32
 }
 struct PixelData {
-    refract_index: f32,
     extinction_coeff: f32,
-    sellmeier_coeff: vec4<f32>,
+    sellmeier_coeff: array<f32, 6>,
     roughness: f32 // root mean square height (standard deviation of normal vector)
 }
 
 // utilities and stuff
-var<private> grid_scale: f32;
+var<workgroup> grid_scale: f32;
 var<private> rand_seed : vec2<f32>;
-fn init_rand(invocation_id: u32, seed: vec4<f32>) {
+fn initRandom(invocation_id: u32, seed: vec4<f32>) {
     rand_seed = seed.xz;
     rand_seed = fract(rand_seed * cos(35.456 + f32(invocation_id) * seed.yw));
     rand_seed = fract(rand_seed * cos(41.235 + f32(invocation_id) * seed.xw));
 }
-fn rand() -> f32 {
+fn random() -> f32 {
     rand_seed.x = fract(cos(dot(rand_seed, vec2<f32>(23.14077926, 232.61690225))) * 136.8168);
     rand_seed.y = fract(cos(dot(rand_seed, vec2<f32>(54.47856553, 345.84153136))) * 534.7645);
     return rand_seed.y;
 }
+@must_use
+fn gridAt(pos: vec2<u32>) -> u32 {
+    return (grid[((clamp(pos.y, 0u, params.grid_size) * params.grid_size) + clamp(pos.x, 0u, params.grid_size)) / 4u] >> ((pos.x % 4) * 8)) & 0xffu;
+}
+@must_use
+fn gridAtPos(pos: vec2<f32>) -> u32 {
+    return (grid[((clamp(u32(pos.y / grid_scale), 0u, params.grid_size) * params.grid_size) + clamp(u32(pos.x / grid_scale), 0u, params.grid_size)) / 4u] >> ((u32(pos.x / grid_scale) % 4) * 8)) & 0xffu;
+}
+var<workgroup> refractive_indices: array<f32, 5>;
+fn initRefractiveIndices() {
+    let wavelength: f32 = f32(params.wavelength * params.wavelength);
+    var pixel: PixelData;
+    for (var i: u32 = 0; i < 5; i++) {
+        pixel = pixel_data[i];
+        refractive_indices[i] = sqrt(1 + ((wavelength * pixel.sellmeier_coeff[0]) / (wavelength - pixel.sellmeier_coeff[3])) + ((wavelength * pixel.sellmeier_coeff[1]) / (wavelength - pixel.sellmeier_coeff[4])) + ((wavelength * pixel.sellmeier_coeff[2]) / (wavelength - pixel.sellmeier_coeff[5])));
+    }
+}
+
 // light stuff
 @must_use
 fn wavelengthToColor(l: u32) -> vec4<f32> {
@@ -125,14 +143,6 @@ fn wavelengthToColor(l: u32) -> vec4<f32> {
 fn toSRGB(c: vec4<u32>) -> vec4<u32> {
     return vec4<u32>(u32(pow(f32(c.x), 1.0 / 2.2)), u32(pow(f32(c.y), 1.0 / 2.2)), u32(pow(f32(c.z), 1.0 / 2.2)), c.w);
 }
-@must_use
-fn gridAt(pos: vec2<u32>) -> u32 {
-    return (grid[((clamp(pos.y, 0u, params.grid_size) * params.grid_size) + clamp(pos.x, 0u, params.grid_size)) / 4u] >> ((pos.x % 4) * 8)) & 0xffu;
-}
-@must_use
-fn gridAtPos(pos: vec2<f32>) -> u32 {
-    return (grid[((clamp(u32(pos.y / grid_scale), 0u, params.grid_size) * params.grid_size) + clamp(u32(pos.x / grid_scale), 0u, params.grid_size)) / 4u] >> ((u32(pos.x / grid_scale) % 4) * 8)) & 0xffu;
-}
 
 // workgroup id
 //  x - ray subdivision
@@ -142,9 +152,11 @@ fn gridAtPos(pos: vec2<f32>) -> u32 {
 //  x - ray angle in quadrant
 @compute @workgroup_size(90, 1, 1)
 fn compute_main(thread: ComputeParams) {
-    // https://www.w3.org/TR/WGSL/#reflect-builtin
-    // https://www.w3.org/TR/WGSL/#refract-builtin
-    grid_scale = 65535.0 / f32(params.grid_size);
+    if thread.local_invocation_index == 0 {
+        grid_scale = 65535.0 / f32(params.grid_size);
+        initRefractiveIndices();
+    }
+    workgroupBarrier();
     let vertex_start: u32 = vertex_allocation * ((((360u * thread.workgroup_id.z) + (thread.thread_id.x + thread.workgroup_id.y * 90u)) * ray_precision) + thread.workgroup_id.x);
     var vertex_index: u32 = 0u;
     let ray_start_angle: f32 = radians(f32(thread.thread_id.x + thread.workgroup_id.y * 90u) + (f32(thread.workgroup_id.x) / f32(ray_precision))) + 0.0001;
@@ -154,7 +166,7 @@ fn compute_main(thread: ComputeParams) {
         1.0
     );
     let color: vec4<f32> = wavelengthToColor(params.wavelength);
-    init_rand(thread.local_invocation_index, params.random_seed);
+    initRandom(thread.local_invocation_index, params.random_seed);
     var vertex: Vertex;
     // source point
     vertex.pos = ray.pos;
@@ -168,9 +180,9 @@ fn compute_main(thread: ComputeParams) {
     var step_move: vec2<f32>;
     var step_dist: f32;
     var col_normal: vec2<f32>;
+    var last_col: vec2<f32>;
     var col_pix: u32;
     var last_pix: u32 = gridAt(vec2<u32>(u32(grid_pos.x), u32(grid_pos.y)));
-    var col_dot: f32;
     for (var i: u32 = 1u; i < vertex_allocation && ray.intensity > 0 && ray.pos.x >= 0.0 && ray.pos.x <= 65535.0 && ray.pos.y >= 0.0 && ray.pos.y <= 65535.0; i++) {
         // step to next grid edge
         grid_pos = ray.pos / grid_scale;
@@ -197,16 +209,25 @@ fn compute_main(thread: ComputeParams) {
             // modify normal vector based on roughness value (which is the standard deviation of normal vectors)
             // inverse normal distribution
             // quantile function??
-            col_dot = dot(ray.dir, col_normal);
-            // incident_angle = acos(col_dot);
-            // fresnel equations probability of reflection/refraction
-            // snell's law moment
-            // test thing
-            ray.dir = ray.dir - (2 * col_normal * col_dot);
-            dir_normals = sign(ray.dir);
-            // only update current medium when refracting
-            // last_pix = col_pix;
+            let col_dot = dot(ray.dir, col_normal);
+            // let index_ratio: f32 = refractive_indices[col_pix] / refractive_indices[last_pix];
+            let index_ratio: f32 = refractive_indices[last_pix] / refractive_indices[col_pix];
+            let k = 1.0 - (index_ratio * index_ratio * (1.0 - col_dot * col_dot));
+            // not sure why this random doesn't work
+            // let reflect_coeff_0 = pow((refractive_indices[last_pix] - refractive_indices[col_pix]) / (refractive_indices[last_pix] + refractive_indices[col_pix]), 2);
+            // random() < reflect_coeff_0 + ((1 - reflect_coeff_0) * pow(1 - col_dot, 5))
+            if k < 0 {
+                // reflection
+                ray.dir = ray.dir - (2 * col_normal * col_dot);
+                dir_normals = sign(ray.dir);
+            } else {
+                // refraction
+                ray.dir = ray.dir * index_ratio - col_normal * (index_ratio * col_dot + sqrt(k));
+                dir_normals = sign(ray.dir);
+                last_pix = col_pix;
+            }
             // modify values and place vertex
+            last_col = ray.pos;
             vertex.pos = ray.pos;
             vertex.color = vec4<f32>(grid_pos.x / f32(params.grid_size), grid_pos.y / f32(params.grid_size), f32(i) / f32(vertex_allocation / 2), 1.0);
             if col_pix != 0 {
@@ -215,6 +236,7 @@ fn compute_main(thread: ComputeParams) {
             writeVertex(vertex_start + vertex_index, vertex);
             vertex_index++;
         }
+        // absorption
     }
     vertex.pos = ray.pos;
     vertex.color = color;

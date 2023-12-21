@@ -1,13 +1,13 @@
 // barbaric javascript
 class LightRenderer {
-    #CANVAS;
     #CTX;
     #ADAPTER;
     #GPU;
     #config = {
         precision: 4, // how many divisions of a degree should be made
         accuracy: 4, // how many rays should be sent for each angle
-        vertexAllocation: 64 // how many vertices are allocated per ray (change to dynamic sizing with hard cap later?)
+        vertexAllocation: 64, // how many vertices are allocated per ray (change to dynamic sizing with hard cap later?)
+        spectrumAccuracy: 20 // step size in nanometers for a spectrum 
     };
     #ready = false;
     #resources = {
@@ -53,7 +53,6 @@ class LightRenderer {
     #gridSize = gridSize;
 
     constructor(canvas) {
-        this.#CANVAS = canvas;
         this.#CTX = canvas.getContext('webgpu');
         let getGPU = async () => {
             this.#ADAPTER = await navigator.gpu?.requestAdapter();
@@ -238,7 +237,7 @@ class LightRenderer {
             // use index buffer to avoid drawing unused vertices?
             // have to do second compute pass for that
         }
-        this.#resources.bufferArrays.params[1] = 580;
+        this.#resources.bufferArrays.params[1] = 590;
         this.#resources.bufferArrays.params[2] = mXGrid;
         this.#resources.bufferArrays.params[3] = mYGrid;
         this.#resources.bufferArrays.params[4] = 100 * Math.random();

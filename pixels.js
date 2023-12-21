@@ -12,6 +12,7 @@ const pixels = {
         },
         refractiveIndex: 1.000293,
         extinctionCoefficient: 0,
+        roughness: 0,
         pickable: true,
         group: 0,
         id: '',
@@ -26,8 +27,35 @@ const pixels = {
                 fillPixels(x, y, w, h, ctx);
             });
         },
-        refractiveIndex: 1,
-        extinctionCoefficient: 1,
+        refractiveIndex: 1.4585,
+        extinctionCoefficient: 0.9,
+        roughness: 170.8,
+        pickable: true,
+        group: 0,
+        id: '',
+        numId: 0
+    },
+    glass: {
+        name: 'Glass',
+        description: 'Why can you still see it',
+        draw: (rectangles, ctx, brush) => {
+            ctx.fillStyle = 'rgba(180, 180, 210, 0.3)';
+            forRectangles(rectangles, (x, y, w, h) => {
+                fillPixels(x, y, w, h, ctx);
+            });
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            forRectangles(rectangles, (x, y, w, h) => {
+                forEachPixel(x, y, w, h, (x2, y2) => {
+                    fillPixels(x2 + 1 / 25, y2 + 6 / 25, 1 / 5, 1 / 5, ctx);
+                    fillPixels(x2 + 6 / 25, y2 + 1 / 25, 1 / 5, 1 / 5, ctx);
+                    fillPixels(x2 + 19 / 25, y2 + 14 / 25, 1 / 5, 1 / 5, ctx);
+                    fillPixels(x2 + 14 / 25, y2 + 19 / 25, 1 / 5, 1 / 5, ctx);
+                });
+            });
+        },
+        refractiveIndex: 1.4585,
+        extinctionCoefficient: 0,
+        roughness: 0.1,
         pickable: true,
         group: 0,
         id: '',
@@ -44,6 +72,7 @@ const pixels = {
         },
         refractiveIndex: 1,
         extinctionCoefficient: 0,
+        roughness: 0,
         pickable: true,
         group: 1,
         id: '',
@@ -65,6 +94,7 @@ const pixels = {
         },
         refractiveIndex: 1,
         extinctionCoefficient: 1,
+        roughness: 0,
         pickable: false,
         group: -1,
         id: '',
@@ -81,6 +111,7 @@ const pixels = {
         },
         refractiveIndex: 0,
         extinctionCoefficient: 1,
+        roughness: 0,
         pickable: false,
         group: -1,
         id: '',
@@ -113,9 +144,9 @@ window.addEventListener('load', async (e) => {
     const groupNames = ['General', 'Lights'];
     for (const id in pixels) {
         const pixel = pixels[id];
-        ctx2.fillStyle = 'rgb(255, 255, 255)';
+        ctx2.fillStyle = 'rgb(0, 0, 0)';
         ctx2.fillRect(0, 0, 50, 50);
-        pixel.draw([[0, 0, 1, 1]], ctx2);
+        pixel.draw([[0, 0, 1, 1]], ctx2, true);
         pixel.image = canvas2.toDataURL('image/png');
         pixel.generatedDescription = `<span style="font-size: 16px; font-weight: bold;">${pixel.name}</span><br>${pixel.description}<br>Refractive Index: ${pixel.refractiveIndex}<br>Extinction Coefficient: ${pixel.extinctionCoefficient}`;
         if (pixel.pickable) {
