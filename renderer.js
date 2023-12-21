@@ -4,8 +4,8 @@ class LightRenderer {
     #ADAPTER;
     #GPU;
     #config = {
-        precision: 4, // how many divisions of a degree should be made
-        accuracy: 4, // how many rays should be sent for each angle
+        precision: 12, // how many divisions of a degree should be made
+        accuracy: 1, // how many rays should be sent for each angle
         vertexAllocation: 64, // how many vertices are allocated per ray (change to dynamic sizing with hard cap later?)
         spectrumAccuracy: 20 // step size in nanometers for a spectrum 
     };
@@ -65,11 +65,11 @@ class LightRenderer {
             // create shader modules
             this.#resources.computeModule = this.#GPU.createShaderModule({
                 label: 'Light compute shader',
-                code: await (await fetch('./rayComputeShader.wgsl')).text()
+                code: await (await fetch('./raytrace.wgsl')).text()
             });
             this.#resources.renderModule = this.#GPU.createShaderModule({
                 label: 'Light render shader',
-                code: await (await fetch('./lineShader.wgsl')).text()
+                code: await (await fetch('./lineRender.wgsl')).text()
             });
             this.compileShaders();
             this.#ready = true;
@@ -203,8 +203,8 @@ class LightRenderer {
                     {
                         format: navigator.gpu.getPreferredCanvasFormat(),
                         blend: {
-                            color: { operation: 'add', srcFactor: 'src', dstFactor: 'zero' },
-                            alpha: { operation: 'add', srcFactor: 'src', dstFactor: 'zero' }
+                            color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+                            alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'zero' }
                         }
                     }
                 ]

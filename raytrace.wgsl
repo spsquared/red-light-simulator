@@ -15,12 +15,12 @@ fn writeVertex(i: u32, v: Vertex) {
 
 // pixel constants, hardcoded
 const pixel_data: array<PixelData, 6> = array(
-    PixelData(0.01, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // air
-    PixelData(0.9, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 170.8), // concrete
-    PixelData(0.0, array<f32, 6>(0.6961663, 0.4079426, 0.8974794, 0.0684043, 0.1162414, 9.896161), 0.1), // glass
-    PixelData(0.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // white light
-    PixelData(1.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // missing pixel
-    PixelData(1.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // brush remove
+    PixelData(1.000293, 0.001, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // air
+    PixelData(2.45, 1.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 170.8), // concrete
+    PixelData(1.4498, 0.01, array<f32, 6>(0.6961663, 0.4079426, 0.8974794, 0.0684043, 0.1162414, 9.896161), 0.1), // glass (fused silica)
+    PixelData(1.0, 0.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // white light
+    PixelData(1.0, 1.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // missing pixel
+    PixelData(1.0, 1.0, array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), // brush remove
 );
 
 // struct stuff
@@ -45,6 +45,7 @@ struct Ray {
     intensity: f32
 }
 struct PixelData {
+    refractive_index: f32,
     extinction_coeff: f32,
     sellmeier_coeff: array<f32, 6>,
     roughness: f32 // root mean square height (standard deviation of normal vector)
@@ -77,7 +78,11 @@ fn initRefractiveIndices() {
     var pixel: PixelData;
     for (var i: u32 = 0; i < 5; i++) {
         pixel = pixel_data[i];
-        refractive_indices[i] = sqrt(1 + ((wavelength * pixel.sellmeier_coeff[0]) / (wavelength - pixel.sellmeier_coeff[3])) + ((wavelength * pixel.sellmeier_coeff[1]) / (wavelength - pixel.sellmeier_coeff[4])) + ((wavelength * pixel.sellmeier_coeff[2]) / (wavelength - pixel.sellmeier_coeff[5])));
+        if pixel.sellmeier_coeff[0] == 0 {
+            refractive_indices[i] = pixel.refractive_index;
+        } else {
+            refractive_indices[i] = sqrt(1 + ((wavelength * pixel.sellmeier_coeff[0]) / (wavelength - pixel.sellmeier_coeff[3])) + ((wavelength * pixel.sellmeier_coeff[1]) / (wavelength - pixel.sellmeier_coeff[4])) + ((wavelength * pixel.sellmeier_coeff[2]) / (wavelength - pixel.sellmeier_coeff[5])));
+        }
     }
 }
 
@@ -163,14 +168,14 @@ fn compute_main(thread: ComputeParams) {
     var ray: Ray = Ray(
         vec2<f32>(vec2<f32>(params.source) * grid_scale + grid_scale * 0.5),
         vec2<f32>(cos(ray_start_angle), sin(ray_start_angle)),
-        1.0
+        0.5
     );
     let color: vec4<f32> = wavelengthToColor(params.wavelength);
-    initRandom(thread.local_invocation_index, params.random_seed);
+    // initRandom(thread.local_invocation_index, params.random_seed);
     var vertex: Vertex;
     // source point
     vertex.pos = ray.pos;
-    vertex.color = vec4<f32>(color.xyz, 0.5);
+    vertex.color = vec4<f32>(color.xyz, color.w * ray.intensity);
     writeVertex(vertex_start + vertex_index, vertex);
     vertex_index++;
     // simulation loop (does defining outside actually make it faster?)
@@ -178,11 +183,11 @@ fn compute_main(thread: ComputeParams) {
     var grid_pos: vec2<f32> = ray.pos / grid_scale;
     var grid_step: vec2<f32>;
     var step_move: vec2<f32>;
-    var step_dist: f32;
     var col_normal: vec2<f32>;
     var last_col: vec2<f32>;
     var col_pix: u32;
     var last_pix: u32 = gridAt(vec2<u32>(u32(grid_pos.x), u32(grid_pos.y)));
+    var total_dist: f32 = 0;
     for (var i: u32 = 1u; i < vertex_allocation && ray.intensity > 0 && ray.pos.x >= 0.0 && ray.pos.x <= 65535.0 && ray.pos.y >= 0.0 && ray.pos.y <= 65535.0; i++) {
         // step to next grid edge
         grid_pos = ray.pos / grid_scale;
@@ -190,7 +195,7 @@ fn compute_main(thread: ComputeParams) {
         step_move.y = grid_step.x * ray.dir.y / ray.dir.x; // distance y to reach x gridline
         if abs(step_move.y) < abs(grid_step.y) {
             // x axis reached before y axis
-            step_dist = length(vec2<f32>(grid_step.x, step_move.y));
+            let step_dist: f32 = length(vec2<f32>(grid_step.x, step_move.y));
             col_pix = gridAt(vec2<u32>(u32(grid_pos.x + dir_normals.x), u32(grid_pos.y)));
             col_normal = vec2<f32>(-dir_normals.x, 0.0);
             ray.pos.x = ray.pos.x + grid_step.x * grid_scale + 0.01 * dir_normals.x;
@@ -198,14 +203,16 @@ fn compute_main(thread: ComputeParams) {
         } else {
             // y axis reached before x axis or edge case
             step_move.x = grid_step.y * ray.dir.x / ray.dir.y; // distance x to reach y gridline
-            step_dist = length(vec2<f32>(step_move.x, grid_step.y));
+            let step_dist: f32 = length(vec2<f32>(step_move.x, grid_step.y));
             col_pix = gridAt(vec2<u32>(u32(grid_pos.x), u32(grid_pos.y + dir_normals.y)));
             col_normal = vec2<f32>(0.0, -dir_normals.y);
             ray.pos.x = select(ray.pos.x + step_move.x * grid_scale + 0.01 * dir_normals.x, ray.pos.x, ray.dir.y == 0.0);
             ray.pos.y = ray.pos.y + grid_step.y * grid_scale + 0.01 * dir_normals.y;
         }
+        // collision
         if col_pix != last_pix {
-            // collision!
+            // update light strength
+            ray.intensity = ray.intensity * pow(1 - pixel_data[last_pix].extinction_coeff, distance(ray.pos, last_col) / grid_scale);
             // modify normal vector based on roughness value (which is the standard deviation of normal vectors)
             // inverse normal distribution
             // quantile function??
@@ -213,7 +220,7 @@ fn compute_main(thread: ComputeParams) {
             // let index_ratio: f32 = refractive_indices[col_pix] / refractive_indices[last_pix];
             let index_ratio: f32 = refractive_indices[last_pix] / refractive_indices[col_pix];
             let k = 1.0 - (index_ratio * index_ratio * (1.0 - col_dot * col_dot));
-            // not sure why this random doesn't work
+            // random chance is borked, no partial reflections :(
             // let reflect_coeff_0 = pow((refractive_indices[last_pix] - refractive_indices[col_pix]) / (refractive_indices[last_pix] + refractive_indices[col_pix]), 2);
             // random() < reflect_coeff_0 + ((1 - reflect_coeff_0) * pow(1 - col_dot, 5))
             if k < 0 {
@@ -229,17 +236,13 @@ fn compute_main(thread: ComputeParams) {
             // modify values and place vertex
             last_col = ray.pos;
             vertex.pos = ray.pos;
-            vertex.color = vec4<f32>(grid_pos.x / f32(params.grid_size), grid_pos.y / f32(params.grid_size), f32(i) / f32(vertex_allocation / 2), 1.0);
-            if col_pix != 0 {
-                vertex.color.z = 1.0;
-            }
+            vertex.color = vec4<f32>(color.xyz, color.w * ray.intensity);
             writeVertex(vertex_start + vertex_index, vertex);
             vertex_index++;
         }
-        // absorption
     }
     vertex.pos = ray.pos;
-    vertex.color = color;
+    vertex.color = vec4<f32>(color.xyz, color.w * ray.intensity);
     writeVertex(vertex_start + vertex_index, vertex);
     vertex_index++;
 }

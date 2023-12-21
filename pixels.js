@@ -28,7 +28,7 @@ const pixels = {
             });
         },
         refractiveIndex: 1.4585,
-        extinctionCoefficient: 0.9,
+        extinctionCoefficient: 1.0,
         roughness: 170.8,
         pickable: true,
         group: 0,
@@ -54,7 +54,7 @@ const pixels = {
             });
         },
         refractiveIndex: 1.4585,
-        extinctionCoefficient: 0,
+        extinctionCoefficient: 0.01,
         roughness: 0.1,
         pickable: true,
         group: 0,
