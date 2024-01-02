@@ -1,3 +1,5 @@
+/* Copyright (C) 2024 Sampleprovider(sp) */
+
 @font-face {
     font-family: 'Source Code Pro';
     font-weight: 100, 200, 300, 400, 500, 600, 700, 800;
@@ -242,6 +244,16 @@ a {
     padding: 8px 8px;
     margin-right: 8px;
     text-align: justify;
+}
+
+#copyrightNotice {
+    position: fixed;
+    bottom: 8px;
+    right: 8px;
+    text-align: right;
+    vertical-align: bottom;
+    font: 12px 'Source Code Pro';
+    color: white !important;
 }
 
 #modalContainer {

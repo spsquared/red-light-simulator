@@ -1,3 +1,5 @@
+// Copyright (C) 2024 Sampleprovider(sp)
+
 struct VertexInput {
     @location(0) position: vec2<u32>,
     @location(1) color: vec4<u32>

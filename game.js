@@ -1,3 +1,5 @@
+// Copyright (C) 2024 Sampleprovider(sp)
+
 const canvasContainer = document.getElementById('canvasContainer');
 const canvas = document.getElementById('canvas');
 const NO_OFFSCREENCANVAS = typeof OffscreenCanvas == 'undefined';

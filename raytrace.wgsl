@@ -1,3 +1,5 @@
+// Copyright (C) 2024 Sampleprovider(sp)
+
 // constants
 override ray_precision: u32;
 override vertex_allocation: u32;
