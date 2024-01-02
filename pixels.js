@@ -13,6 +13,7 @@ const pixels = {
         refractiveIndex: 1.000293,
         extinctionCoefficient: 0,
         roughness: 0,
+        spectrum: [],
         pickable: true,
         group: 0,
         id: '',
@@ -27,9 +28,10 @@ const pixels = {
                 fillPixels(x, y, w, h, ctx);
             });
         },
-        refractiveIndex: 1.4585,
+        refractiveIndex: 2.45,
         extinctionCoefficient: 1.0,
         roughness: 170.8,
+        spectrum: [],
         pickable: true,
         group: 0,
         id: '',
@@ -53,9 +55,37 @@ const pixels = {
                 });
             });
         },
-        refractiveIndex: 1.4585,
+        refractiveIndex: 1.4498,
         extinctionCoefficient: 0.01,
         roughness: 0.1,
+        spectrum: [],
+        pickable: true,
+        group: 0,
+        id: '',
+        numId: 0
+    },
+    tinted_glass: {
+        name: 'Tinted Glass',
+        description: 'Absorbs some of the light that passes through it',
+        draw: (rectangles, ctx, brush) => {
+            ctx.fillStyle = 'rgba(120, 120, 140, 0.3)';
+            forRectangles(rectangles, (x, y, w, h) => {
+                fillPixels(x, y, w, h, ctx);
+            });
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            forRectangles(rectangles, (x, y, w, h) => {
+                forEachPixel(x, y, w, h, (x2, y2) => {
+                    fillPixels(x2 + 1 / 25, y2 + 6 / 25, 1 / 5, 1 / 5, ctx);
+                    fillPixels(x2 + 6 / 25, y2 + 1 / 25, 1 / 5, 1 / 5, ctx);
+                    fillPixels(x2 + 19 / 25, y2 + 14 / 25, 1 / 5, 1 / 5, ctx);
+                    fillPixels(x2 + 14 / 25, y2 + 19 / 25, 1 / 5, 1 / 5, ctx);
+                });
+            });
+        },
+        refractiveIndex: 1.4498,
+        extinctionCoefficient: 0.01,
+        roughness: 0.1,
+        spectrum: [],
         pickable: true,
         group: 0,
         id: '',
@@ -70,9 +100,28 @@ const pixels = {
                 fillPixels(x, y, w, h, ctx);
             });
         },
-        refractiveIndex: 1,
+        refractiveIndex: 1.000293,
         extinctionCoefficient: 0,
         roughness: 0,
+        spectrum: [400, 740],
+        pickable: true,
+        group: 1,
+        id: '',
+        numId: 0
+    },
+    light_yellow: {
+        name: 'Yellow Glowstone',
+        description: 'Stone that glows 590nm yellow',
+        draw: (rectangles, ctx, brush) => {
+            ctx.fillStyle = 'rgb(255, 200, 0)';
+            forRectangles(rectangles, (x, y, w, h) => {
+                fillPixels(x, y, w, h, ctx);
+            });
+        },
+        refractiveIndex: 1.000293,
+        extinctionCoefficient: 0,
+        roughness: 0,
+        spectrum: [590, 590],
         pickable: true,
         group: 1,
         id: '',
@@ -95,6 +144,7 @@ const pixels = {
         refractiveIndex: 1,
         extinctionCoefficient: 1,
         roughness: 0,
+        spectrum: [],
         pickable: false,
         group: -1,
         id: '',
@@ -112,6 +162,7 @@ const pixels = {
         refractiveIndex: 0,
         extinctionCoefficient: 1,
         roughness: 0,
+        spectrum: [],
         pickable: false,
         group: -1,
         id: '',
@@ -133,6 +184,15 @@ for (const id in pixels) {
     pixIndex++;
 }
 window.addEventListener('load', async (e) => {
+    function emmissionSpectrum(spectrum) {
+        if (spectrum.length == 0) return 'None';
+        let ret = '';
+        for (let i = 0; i < spectrum.length; i += 2) {
+            if (spectrum[i] == spectrum[i + 1]) ret += spectrum[i] + 'nm ';
+            else ret += `${spectrum[i]}nm-${spectrum[i + 1]}nm `;
+        }
+        return ret;
+    };
     const canvas2 = document.createElement('canvas');
     const ctx2 = canvas2.getContext('2d');
     canvas2.width = 50;
@@ -148,7 +208,7 @@ window.addEventListener('load', async (e) => {
         ctx2.fillRect(0, 0, 50, 50);
         pixel.draw([[0, 0, 1, 1]], ctx2, true);
         pixel.image = canvas2.toDataURL('image/png');
-        pixel.generatedDescription = `<span style="font-size: 16px; font-weight: bold;">${pixel.name}</span><br>${pixel.description}<br>Refractive Index: ${pixel.refractiveIndex}<br>Extinction Coefficient: ${pixel.extinctionCoefficient}`;
+        pixel.generatedDescription = `<span style="font-size: 16px; font-weight: bold;">${pixel.name}</span><br>${pixel.description}<br>Refractive Index: ${pixel.refractiveIndex}<br>Extinction Coefficient: ${pixel.extinctionCoefficient}<br>Emission Spectrums: ${emmissionSpectrum(pixel.spectrum)}`;
         if (pixel.pickable) {
             const box = document.createElement('div');
             box.classList.add('pickerPixel');

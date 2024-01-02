@@ -7,7 +7,8 @@ class LightRenderer {
         precision: 12, // how many divisions of a degree should be made
         accuracy: 1, // how many rays should be sent for each angle
         vertexAllocation: 64, // how many vertices are allocated per ray (change to dynamic sizing with hard cap later?)
-        spectrumAccuracy: 20 // step size in nanometers for a spectrum 
+        maxDDAsteps: 128, // hard cap on how many steps off the DDA algorithm can be made
+        spectrumAccuracy: 10 // step size in nanometers for a spectrum
     };
     #ready = false;
     #resources = {
@@ -180,7 +181,7 @@ class LightRenderer {
                 entryPoint: 'compute_main',
                 constants: {
                     ray_precision: this.#config.precision,
-                    // ray_accuracy: this.#config.accuracy,
+                    max_dda_steps: this.#config.maxDDAsteps,
                     vertex_allocation: this.#config.vertexAllocation
                 }
             }
@@ -205,6 +206,8 @@ class LightRenderer {
                         blend: {
                             color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
                             alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'zero' }
+                            // color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'dst-alpha' },
+                            // alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one' }
                         }
                     }
                 ]
@@ -216,7 +219,7 @@ class LightRenderer {
         });
     }
 
-    async render() {
+    render() {
         if (!this.#ready) return false;
         // prepare buffers
         this.#resources.bufferArrays.grid.set(grid.slice(0, this.#gridSize).reduce((f, r) => { f.push(...r.slice(0, this.#gridSize)); return f; }, []));
@@ -224,18 +227,15 @@ class LightRenderer {
         this.#resources.bufferArrays.params[0] = this.#gridSize;
         const lightSources = grid.slice(0, this.#gridSize).reduce((f, r, y) => {
             f.push(...r.slice(0, this.#gridSize).reduce((l, p, x) => {
-                if (p == pixNum.LIGHT_WHITE) l.push([x, y]);
+                if (numPixels[p].spectrum.length > 0) l.push([x, y, p]);
                 return l;
             }, []));
             return f;
         }, []);
         for (let source of lightSources) {
             // console.log(source);
-            // run a compute/render pair - render is very fast for small amounts of vertices
-            // store to texture or something... (can fragment shader read from current values?)
-            // also have to do multiple compute/render pairs for lights with multiple frequencies
-            // use index buffer to avoid drawing unused vertices?
-            // have to do second compute pass for that
+            // idk textures and stuff
+            // uhhh big texture?
         }
         this.#resources.bufferArrays.params[1] = 590;
         this.#resources.bufferArrays.params[2] = mXGrid;
@@ -257,7 +257,7 @@ class LightRenderer {
         const renderPass = encoder.beginRenderPass({
             colorAttachments: [{
                 view: this.#CTX.getCurrentTexture().createView(),
-                loadOp: 'clear',
+                loadOp: 'load',
                 storeOp: 'store',
                 clearValue: { r: 0, g: 0, b: 0, a: 0 }
             }]
