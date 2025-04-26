@@ -1,5 +1,5 @@
 # red-light-simulator
-An attempt to simulate light using WebGPU. Now archived because I don't have the time or passion to continue it.
+An attempt to simulate light using WebGPU
 
 done:
 - put lines on the screen
