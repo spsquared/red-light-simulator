@@ -63,7 +63,8 @@ class LightRenderer {
             if (this.#GPU == undefined) modal('<span style="color: red;">WebGPU not supported!<span>', '<span style="color: red;">Red Light Simulator needs WebGPU to run!<span>');
             this.#CTX.configure({
                 device: this.#GPU,
-                format: navigator.gpu.getPreferredCanvasFormat()
+                format: navigator.gpu.getPreferredCanvasFormat(),
+                alphaMode: 'premultiplied'
             });
             // create shader modules
             this.#resources.computeModule = this.#GPU.createShaderModule({
